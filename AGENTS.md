@@ -109,3 +109,10 @@ performed unless it actually was.
 - Language preference applies after relaunch and must not change remote keyboard layout.
 - `make test` checks session UI in both languages; `scripts/render_previews.sh` renders real AppKit views with in-memory `.invalid` demo profiles only.
 - Keep timeout recovery explicit: CLIPRDR responses have no request ID. Do not clear outstanding state and accept late data as a new response.
+
+## Dependency acquisition
+
+FreeRDP may be a verified git checkout or a checksum-verified archive tree
+with `.rdpmac-source-commit` and `.rdpmac-source-sha256` markers. Use
+`scripts/fetch_freerdp.sh`; do not reintroduce an unverified download or rely
+on git DNS availability. CI caches OpenSSL and FreeRDP independently.

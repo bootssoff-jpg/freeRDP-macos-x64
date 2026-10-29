@@ -1,43 +1,88 @@
 name: build-macos-x86_64
 
-# macos-15-intel is a GitHub-hosted Intel (x86_64) runner label documented at
-# https://docs.github.com/en/actions/reference/runners/github-hosted-runners
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
+    # Intel runner; deployment target remains macOS 12.0.
     runs-on: macos-15-intel
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show toolchain
-        run: |
-          uname -m
-          sw_vers
-          xcode-select -p
-          swift --version
-          cmake --version
-
       - name: Install dependencies
         run: brew install cmake
 
-      - name: Cache dependency builds
-        uses: actions/cache@v4
+      - name: Show and fingerprint toolchain
+        id: toolchain
+        run: |
+          uname -m
+          sw_vers
+          swift --version
+          cmake --version
+          fingerprint="$( { xcrun clang --version; xcrun --show-sdk-version; cmake --version; } | shasum -a 256 | awk '{print $1}')"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Restore OpenSSL cache
+        id: openssl-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: vendor/openssl-install
+          key: openssl-3.6.4-macos12-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('scripts/build_openssl.sh') }}
+
+      - name: Restore FreeRDP cache
+        id: freerdp-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             vendor/FreeRDP-3.32.2
             vendor/freerdp-install
-            vendor/openssl-3.6.4
-            vendor/openssl-install
-          key: deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build_freerdp.sh', 'scripts/build_openssl.sh') }}
+            vendor/freerdp-*.tar.gz
+          key: freerdp-3.32.2-macos12-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('scripts/build_freerdp.sh', 'scripts/fetch_freerdp.sh', 'scripts/build_openssl.sh') }}
 
-      - name: Build OpenSSL and FreeRDP 3.32.2
+      - name: Fetch checksum-verified FreeRDP sources
+        run: ./scripts/fetch_freerdp.sh
+
+      - name: Test dependency download failure handling
+        run: ./Tests/fetch_freerdp.sh
+
+      - name: Build OpenSSL 3.6.4
+        run: ./scripts/build_openssl.sh
+
+      # Save immediately: a later network or test failure must not discard
+      # the completed OpenSSL build and force another full compilation.
+      - name: Save OpenSSL cache
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: vendor/openssl-install
+          key: ${{ steps.openssl-cache.outputs.cache-primary-key }}
+
+      - name: Build FreeRDP 3.32.2
         run: ./scripts/build_freerdp.sh
+
+      - name: Save FreeRDP cache
+        if: steps.freerdp-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            vendor/FreeRDP-3.32.2
+            vendor/freerdp-install
+            vendor/freerdp-*.tar.gz
+          key: ${{ steps.freerdp-cache.outputs.cache-primary-key }}
 
       - name: Run automated tests
         run: ./scripts/run_tests.sh

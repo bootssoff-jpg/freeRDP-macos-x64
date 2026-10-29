@@ -95,3 +95,27 @@ The expected output has `@rpath` OpenSSL references, no `/usr/local` or
 FreeRDP, runs tests, packages the ZIP/DMG/SHA256SUMS, verifies
 architecture/minimum macOS/rpaths/signature and uploads the unsigned artifacts.
 No signing secrets are used by CI.
+
+## Dependency download resilience
+
+FreeRDP sources are fetched by `scripts/fetch_freerdp.sh` from the official
+`codeload.github.com` archive of commit
+`97eff6ddfbbfaa8e42a126d362686bd001ff8bdc`. The archive SHA-256 is pinned and
+verified before extraction; DNS, connection and other transfer errors are
+retried within bounded time limits. A verified existing git checkout is also
+accepted. Unknown local source directories are preserved and rejected.
+
+This replaces the `git clone github.com` path that failed with a DNS error
+in an earlier CI run. TLS verification and dependency pinning remain enabled.
+OpenSSL and FreeRDP have separate CI caches keyed by scripts, architecture
+and toolchain fingerprint; each successful dependency build is saved before
+the next stage. New runs of the same branch cancel outdated runs.
+
+`Tests/fetch_freerdp.sh` uses the cached pinned archive as a fixture and mocks
+transport. It checks download without github.com git access, offline reuse,
+checksum rejection and preservation of unidentified source directories.
+
+Archive sources carry upstream `.source_tag` and `.source_version` metadata,
+and the build disables parent-repository tag discovery. This prevents an app
+tag such as `v1.0.0` from changing FreeRDP's library version. The configured
+FreeRDP version must be exactly `3.32.2` before compilation starts.

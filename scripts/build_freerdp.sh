@@ -55,22 +55,7 @@ trap 'rm -rf "$OPENSSL_LINK"' EXIT
 ln -s "$OPENSSL_PREFIX" "$OPENSSL_LINK/prefix"
 OPENSSL_BUILD_PREFIX="$OPENSSL_LINK/prefix"
 
-if [ ! -d "$SRC/.git" ]; then
-    rm -rf "$SRC"
-    echo "Fetching FreeRDP $PINNED_TAG..."
-    for attempt in 1 2 3; do
-        if git clone --depth 1 --branch "$PINNED_TAG" https://github.com/FreeRDP/FreeRDP.git "$SRC"; then
-            break
-        fi
-        [ "$attempt" -lt 3 ] || fail "FreeRDP download failed after 3 attempts"
-        rm -rf "$SRC"
-        sleep "$((attempt * 2))"
-    done
-fi
-
-ACTUAL_COMMIT="$(git -C "$SRC" rev-parse HEAD)"
-[ "$ACTUAL_COMMIT" = "$PINNED_COMMIT" ] ||
-    fail "FreeRDP commit mismatch: $ACTUAL_COMMIT (expected $PINNED_COMMIT)"
+"$ROOT/scripts/fetch_freerdp.sh"
 
 SDK="$(xcrun --show-sdk-path)"
 HOST_ARCH="$(uname -m)"
@@ -87,6 +72,8 @@ CMAKE_FLAGS=(
     -S "$SRC"
     -B "$BUILD"
     -DCMAKE_BUILD_TYPE=Release
+    -DUSE_VERSION_FROM_GIT_TAG=OFF
+    -DUSE_GIT_FOR_REVISION=ON
     -DCMAKE_OSX_ARCHITECTURES=x86_64
     -DCMAKE_OSX_DEPLOYMENT_TARGET="$MIN_MACOS"
     -DCMAKE_OSX_SYSROOT="$SDK"
@@ -159,6 +146,11 @@ cmake "${CMAKE_FLAGS[@]}" >"$LOG" 2>&1 || {
     tail -50 "$LOG" >&2
     fail "FreeRDP configure failed (see $LOG)"
 }
+
+# An archive nested in this repository must not inherit this app's v1.0.0
+# git tag and accidentally build FreeRDP's API/sonames as version 1.
+grep -Fq '#define FREERDP_VERSION "3.32.2"' "$BUILD/include/freerdp/version.h" ||
+    fail "Configured FreeRDP version does not match the pinned release"
 
 JOBS="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 echo "Building FreeRDP with $JOBS jobs..."

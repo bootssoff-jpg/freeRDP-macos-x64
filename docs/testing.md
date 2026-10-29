@@ -111,3 +111,10 @@ been run.
 Automated session-window checks run in both EN and RU. Protocol tests exercise
 timeout recovery state and polling timer suspension without waiting for a real
 server. These checks do not mark the manual items above as passed.
+
+## Dependency downloader regression
+
+CI runs `Tests/fetch_freerdp.sh` after fetching the pinned source archive.
+The test uses an isolated temporary directory and a mocked curl transport;
+it does not change the project dependency installation or access Windows.
+The expected archive checksum and official codeload URL remain fixed.

@@ -4,6 +4,8 @@ vendor/FreeRDP-3.32.2/
 vendor/build-freerdp/
 vendor/freerdp-install/
 vendor/freerdp-*.tar.gz
+vendor/freerdp-*.tar.gz.part
+vendor/freerdp-extract.*/
 vendor/freerdp-build.log
 vendor/openssl-3.6.4/
 vendor/openssl-3.6.4.tar.gz

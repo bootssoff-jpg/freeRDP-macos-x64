@@ -64,7 +64,9 @@ fi
 if [ ! -f "$TARBALL" ]; then
     mkdir -p "$VENDOR"
     echo "Downloading OpenSSL $VERSION..."
-    curl -fL --retry 3 --connect-timeout 20 -o "$TARBALL.part" "$URL"
+    curl -fL --retry 3 --retry-all-errors --retry-delay 2 \
+        --retry-max-time 240 --connect-timeout 20 --max-time 180 \
+        -o "$TARBALL.part" "$URL"
     mv "$TARBALL.part" "$TARBALL"
 fi
 

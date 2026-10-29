@@ -1044,6 +1044,7 @@ static NSError *RDPMacClientError(NSString *message)
         ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_TlsSecLevel, 0);
     }
 
+
     switch (securityMode) {
         case RDPMacSecurityModeTLS:
             ok = ok && freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, FALSE);
@@ -1698,7 +1699,9 @@ static int RDPMacClampCoordinate(int value, size_t limit)
                 buttonFlag = PTR_FLAGS_BUTTON2;
             else if (button == 2)
                 buttonFlag = PTR_FLAGS_BUTTON3;
-            UINT16 flags = PTR_FLAGS_MOVE | buttonFlag;
+            // Match the reference macOS FreeRDP client: button events carry
+            // the button flag (and DOWN), not PTR_FLAGS_MOVE.
+            UINT16 flags = buttonFlag;
             if (down)
                 flags |= PTR_FLAGS_DOWN;
             freerdp_input_send_mouse_event(input, flags, px, py);

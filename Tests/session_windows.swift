@@ -105,5 +105,17 @@ func formatTokens(_ value: String) -> [String] {
 }
 expect(english.allSatisfy { formatTokens($0.key) == formatTokens($0.value) },
        "all English format strings preserve their argument types and order")
+let repositoryItem = findItem(emptyMenu, action: #selector(AppDelegate.openProjectRepository(_:)))
+expect(repositoryItem?.target === launchDelegate, "project GitHub link is available without a session")
+expect(AppAbout.repositoryURL.absoluteString == "https://github.com/bootssoff-jpg/freeRDP-macos-x64",
+       "Help and About link to the application repository")
+let credits = AppAbout.options[.credits] as? NSAttributedString
+expect(credits?.string.contains("NFreeZr") == true, "About panel explicitly credits NFreeZr")
+if let credits {
+    let links = (0..<credits.length).compactMap { credits.attribute(.link, at: $0, effectiveRange: nil) as? URL }
+    expect(links.contains(AppAbout.repositoryURL), "About repository credit is a clickable link")
+}
+expect((AppAbout.options[NSApplication.AboutPanelOptionKey(rawValue: "Copyright")] as? String)?.contains("NFreeZr") == true,
+       "About copyright is independent of stale bundle metadata")
 print(failures == 0 ? "RESULT: OK" : "RESULT: \(failures) FAILURES")
 exit(failures == 0 ? 0 : 1)

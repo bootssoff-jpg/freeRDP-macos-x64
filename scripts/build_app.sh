@@ -12,7 +12,7 @@ DIST="$BUILD/dist"
 APP="$BUILD/RDP Mac.app"
 BIN="$APP/Contents/MacOS/RDPMac"
 FREERDP="$ROOT/vendor/freerdp-install"
-VERSION="1.0.0"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Resources/Info.plist")"
 MIN_MACOS="12.0"
 
 fail() {

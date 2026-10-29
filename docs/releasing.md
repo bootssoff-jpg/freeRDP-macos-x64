@@ -4,7 +4,7 @@ This document prepares a release; it does **not** upload or publish anything.
 
 ## Version
 
-`CFBundleShortVersionString` and the scripts use `1.0.0`. Keep the app bundle,
+`CFBundleShortVersionString` is `1.0.1`; build and CI artifact names read it from `Info.plist`. Keep the app bundle,
 ZIP, DMG, `CHANGELOG.md` and release notes on the same version. The build
 number in `CFBundleVersion` is independent; do not invent a second public
 version.
@@ -30,8 +30,8 @@ make dist
 Expected files:
 
 ```text
-build/dist/RDP-Mac-1.0.0-x86_64-unsigned.zip
-build/dist/RDP-Mac-1.0.0-x86_64-unsigned.dmg
+build/dist/RDP-Mac-1.0.1-x86_64-unsigned.zip
+build/dist/RDP-Mac-1.0.1-x86_64-unsigned.dmg
 build/dist/SHA256SUMS
 ```
 
@@ -81,8 +81,8 @@ acceptance.
 
 ## Release notes
 
-Use [release-notes-1.0.0.md](release-notes-1.0.0.md) (English) or
-[release-notes-1.0.0.ru.md](release-notes-1.0.0.ru.md) (Russian) as the draft.
+Use [release-notes-1.0.1.md](release-notes-1.0.1.md) (English) or
+[release-notes-1.0.1.ru.md](release-notes-1.0.1.ru.md) (Russian) as the draft.
 Keep the signature status factual: unsigned, signed but not notarized, or
 notarized.
 Include the SHA-256 values from the actual `SHA256SUMS`, not placeholders.

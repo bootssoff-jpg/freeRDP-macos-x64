@@ -572,8 +572,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     }
 
     @objc func showAbout(_ sender: Any?) {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.orderFrontStandardAboutPanel(nil)
+        AppAbout.show()
     }
 
     @objc func showHelp(_ sender: Any?) {

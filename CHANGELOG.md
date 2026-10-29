@@ -4,7 +4,14 @@ All notable changes are documented here. This project follows semantic
 versioning for public builds. A version is not published until an artifact is
 actually uploaded.
 
-## [Unreleased] — 1.0.0 release candidate
+## 1.0.1 Preview
+
+- Explicit NFreeZr author credit and a clickable project repository link in About (EN/RU).
+- Help menu links directly to the application's GitHub repository.
+- Release version is read from Info.plist by the build and CI artifact upload.
+- CI dependency download resilience improvements remain in main.
+
+## 1.0.0 Preview
 
 ### Added
 

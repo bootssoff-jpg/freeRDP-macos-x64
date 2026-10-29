@@ -363,6 +363,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   key: "/",
                                   modifiers: [.command, .shift],
                                   target: self))
+        helpMenu.addItem(menuItem(L("RDP Mac — репозиторий GitHub"),
+                                  action: #selector(openProjectRepository(_:)),
+                                  target: self))
         helpMenu.addItem(menuItem(L("FreeRDP — официальный сайт"),
                                   action: #selector(openFreeRDP),
                                   target: self))
@@ -383,8 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showAbout(_ sender: Any?) {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.orderFrontStandardAboutPanel(nil)
+        AppAbout.show()
     }
 
     @objc func showHelp(_ sender: Any?) {
@@ -440,6 +442,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                        + error.localizedDescription, level: 2)
             }
         }
+    }
+
+    @objc func openProjectRepository(_ sender: Any?) {
+        NSWorkspace.shared.open(AppAbout.repositoryURL)
     }
 
     @objc private func openFreeRDP() {

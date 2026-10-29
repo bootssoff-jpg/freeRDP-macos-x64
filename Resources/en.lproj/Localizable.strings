@@ -334,3 +334,7 @@
 "Не удалось закодировать текст в CF_TEXT" = "Could not encode text as CF_TEXT";
 "Формат буфера обмена не поддерживается" = "Unsupported clipboard format";
 "Буфер: нужно переподключение" = "Clipboard: reconnect required";
+"Автор: %@" = "Author: %@";
+"Репозиторий приложения на GitHub" = "Application repository on GitHub";
+"© 2026 NFreeZr. Независимый клиент на базе FreeRDP." = "© 2026 NFreeZr. Independent client built on FreeRDP.";
+"RDP Mac — репозиторий GitHub" = "RDP Mac — GitHub repository";

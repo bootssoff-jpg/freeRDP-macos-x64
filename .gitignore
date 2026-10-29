@@ -1,0 +1,15 @@
+# Build products
+build/
+vendor/FreeRDP-3.32.2/
+vendor/build-freerdp/
+vendor/freerdp-install/
+vendor/freerdp-*.tar.gz
+vendor/freerdp-build.log
+
+# macOS
+.DS_Store
+*.xcuserstate
+*.swp
+
+# Local test artifacts
+*.log

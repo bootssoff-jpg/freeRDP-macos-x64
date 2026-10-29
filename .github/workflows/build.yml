@@ -1,0 +1,58 @@
+name: build-macos-x86_64
+
+# macos-15-intel is a GitHub-hosted Intel (x86_64) runner label documented at
+# https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          uname -m
+          sw_vers
+          xcode-select -p
+          swift --version
+          cmake --version
+
+      - name: Install dependencies
+        run: brew install cmake openssl@3
+
+      - name: Cache FreeRDP build
+        uses: actions/cache@v4
+        with:
+          path: |
+            vendor/FreeRDP-3.32.2
+            vendor/freerdp-install
+          key: freerdp-3.32.2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build_freerdp.sh') }}
+
+      - name: Build FreeRDP 3.32.2
+        run: ./scripts/build_freerdp.sh
+
+      - name: Run automated tests
+        run: ./scripts/run_tests.sh
+
+      - name: Build app bundle
+        run: ./scripts/build_app.sh
+
+      - name: Verify architecture, rpaths and signature
+        run: |
+          lipo -info "build/RDP Mac.app/Contents/MacOS/RDPMac" | grep x86_64
+          otool -L "build/RDP Mac.app/Contents/MacOS/RDPMac" | grep -E '@rpath/libssl|@rpath/libcrypto'
+          ! otool -L "build/RDP Mac.app/Contents/MacOS/RDPMac" | grep -E '/usr/local|/opt/homebrew'
+          codesign --verify --deep --strict "build/RDP Mac.app"
+
+      - name: Upload unsigned app
+        uses: actions/upload-artifact@v4
+        with:
+          name: RDP-Mac-1.0.0-x86_64-unsigned
+          path: build/dist/RDP-Mac-1.0.0-x86_64-unsigned.zip
+          if-no-files-found: error

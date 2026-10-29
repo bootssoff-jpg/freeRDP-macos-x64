@@ -768,6 +768,7 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
 
     RDPMacClipboardController *_clipboard;
     BOOL _clipboardEnabled;
+    BOOL _clipboardSynchronizationActive;
     BOOL _commandAsControl;
     NSTimeInterval _certificateTimeout;
 
@@ -847,6 +848,8 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
         _certificateTimeout = 180.0;
         _clipboard = [[RDPMacClipboardController alloc] initWithEnabled:NO];
         _clipboard.client = self;
+        _clipboardSynchronizationActive = NO;
+        [_clipboard setSynchronizationActive:NO];
         _state = RDPMacConnectionStateIdle;
     }
     return self;
@@ -963,6 +966,9 @@ static NSError *RDPMacClientError(NSString *message)
     [_clipboard shutdown];
     _clipboard = [[RDPMacClipboardController alloc] initWithEnabled:clipboardEnabled];
     _clipboard.client = self;
+    // start() replaces the controller; preserve the active/paused state that
+    // the UI set before the connection thread was created.
+    [_clipboard setSynchronizationActive:_clipboardSynchronizationActive];
 
     pthread_mutex_lock(&_frameLock);
     _hasFrame = NO;
@@ -1462,6 +1468,7 @@ static NSError *RDPMacClientError(NSString *message)
 }
 
 - (BOOL)copyFrameIntoBuffer:(void *)dst
+                   capacity:(size_t)capacity
                      stride:(size_t)stride
                       width:(size_t *)width
                      height:(size_t *)height
@@ -1474,7 +1481,7 @@ static NSError *RDPMacClientError(NSString *message)
         return NO;
     }
     const size_t rowBytes = _frameWidth * 4;
-    if (stride < rowBytes) {
+    if (stride < rowBytes || stride == 0 || _frameHeight > capacity / stride) {
         pthread_mutex_unlock(&_frameLock);
         return NO;
     }
@@ -1854,6 +1861,12 @@ static int RDPMacClampCoordinate(int value, size_t limit)
 - (RDPMacClipboardDiagnostics *)clipboardDiagnostics
 {
     return [_clipboard diagnostics];
+}
+
+- (void)setClipboardActive:(BOOL)active
+{
+    _clipboardSynchronizationActive = active;
+    [_clipboard setSynchronizationActive:active];
 }
 
 - (void)clipboardSendLocal

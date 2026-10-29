@@ -11,10 +11,8 @@ OBJ="$BUILD/obj"
 FREERDP="$ROOT/vendor/freerdp-install"
 mkdir -p "$OBJ"
 
-if command -v brew >/dev/null 2>&1; then
-    OPENSSL_PREFIX="$(brew --prefix openssl@3 2>/dev/null || true)"
-fi
-OPENSSL_PREFIX="${OPENSSL_PREFIX:-/usr/local/opt/openssl@3}"
+"$ROOT/scripts/build_openssl.sh"
+OPENSSL_PREFIX="$ROOT/vendor/openssl-install"
 [ -f "$FREERDP/lib/libfreerdp-client3.a" ] ||
     "$ROOT/scripts/build_freerdp.sh"
 
@@ -32,6 +30,7 @@ LDFLAGS=(
     -L"$FREERDP/lib" -L"$FREERDP/lib/freerdp3"
     -lfreerdp-client3 -lremdesk-common -lfreerdp3 -lwinpr3
     -L"$OPENSSL_PREFIX/lib" -lssl -lcrypto
+    -Wl,-rpath,"$OPENSSL_PREFIX/lib"
     -framework AppKit -framework Foundation -framework CoreGraphics
     -framework IOKit -framework Carbon -framework Security
     -lpthread -ldl -lm
@@ -65,6 +64,28 @@ echo "== Clipboard serialization tests =="
 echo "== CLIPRDR controller protocol tests (fake channel, real NSPasteboard) =="
 "$BUILD/clipboard_protocol_tests" | tail -3
 
+echo "== Multiple session windows, menu routing and profile groups =="
+SWIFT_LDFLAGS=()
+for flag in "${LDFLAGS[@]}"; do
+    case "$flag" in
+        -Wl,*) ;;
+        *) SWIFT_LDFLAGS+=("$flag") ;;
+    esac
+done
+mkdir -p "$BUILD/session-windows"
+cp "$ROOT/Tests/session_windows.swift" "$BUILD/session-windows/main.swift"
+APP_SOURCES=()
+for source in "$ROOT"/Sources/App/*.swift; do
+    [ "$(basename "$source")" = main.swift ] || APP_SOURCES+=("$source")
+done
+swiftc -swift-version 5 -target x86_64-apple-macos12.0 \
+    -import-objc-header "$ROOT/Sources/App/RDPMac-Bridging-Header.h" \
+    -Xcc -I"$ROOT/Sources/Bridge" \
+    "${APP_SOURCES[@]}" "$BUILD/session-windows/main.swift" "$OBJ"/*.o \
+    -Xlinker -rpath -Xlinker "$OPENSSL_PREFIX/lib" \
+    "${SWIFT_LDFLAGS[@]}" -o "$BUILD/session_windows"
+"$BUILD/session_windows" | tail -5
+
 echo "== Bundled app self-test (if built) =="
 APP_BIN="$ROOT/build/RDP Mac.app/Contents/MacOS/RDPMac"
 if [ -x "$APP_BIN" ]; then
@@ -74,4 +95,4 @@ else
 fi
 
 echo "ALL AUTOMATED TESTS PASSED"
-echo "Live Windows RDP integration is manual: see README.md"
+echo "Live Windows RDP integration is manual: see docs/testing.md"

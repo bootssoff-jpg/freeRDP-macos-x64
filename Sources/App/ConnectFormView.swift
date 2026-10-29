@@ -44,6 +44,7 @@ final class ConnectFormView: NSView {
     private let profilePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let saveProfileButton = UI.button("Сохранить профиль", target: nil, action: nil)
     private let deleteProfileButton = UI.button("Удалить профиль", target: nil, action: nil)
+    private let groupField = UI.textField(placeholder: "Например: Работа или Дом", width: 300)
     private let hostField = UI.textField(placeholder: "server.example.local", width: 300)
     private let portField = UI.textField(placeholder: "3389", width: 70)
     private let usernameField = UI.textField(placeholder: "Пользователь", width: 220)
@@ -138,6 +139,7 @@ final class ConnectFormView: NSView {
 
         let grid = NSGridView(views: [
             [UI.label("Профиль", weight: .medium), profileRow],
+            [UI.label("Группа", weight: .medium), groupField],
             [UI.label("Сервер", weight: .medium), serverRow],
             [UI.label("Пользователь", weight: .medium), userRow],
             [UI.label("Пароль", weight: .medium), passwordRow],
@@ -184,13 +186,15 @@ final class ConnectFormView: NSView {
            let index = profiles.firstIndex(where: { $0.id == selectedID }) {
             profilePopup.selectItem(at: index + 1)
         } else {
+            self.selectedProfileID = nil
             profilePopup.selectItem(at: 0)
         }
         programmaticSelection = false
-        deleteProfileButton.isEnabled = selectedID != nil
+        deleteProfileButton.isEnabled = self.selectedProfileID != nil
     }
 
     func applyProfile(_ profile: Profile, password: String?) {
+        groupField.stringValue = profile.group ?? ""
         hostField.stringValue = profile.host
         portField.stringValue = String(profile.port)
         usernameField.stringValue = profile.username
@@ -233,7 +237,8 @@ final class ConnectFormView: NSView {
                 commandAsControl: commandAsControlCheckbox.state == .on,
                 autoResize: autoResizeCheckbox.state == .on,
                 resolution: selectedResolution,
-                legacyTLS: legacyTLSCheckbox.state == .on)
+                legacyTLS: legacyTLSCheckbox.state == .on,
+                group: groupField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     var selectedProfile: UUID? { selectedProfileID }
@@ -268,6 +273,7 @@ final class ConnectFormView: NSView {
         saveProfileButton.isEnabled = !busy
         deleteProfileButton.isEnabled = !busy && selectedProfileID != nil
         profilePopup.isEnabled = !busy
+        groupField.isEnabled = !busy
         hostField.isEnabled = !busy
         portField.isEnabled = !busy
         usernameField.isEnabled = !busy
@@ -350,6 +356,8 @@ final class ConnectFormView: NSView {
     @objc private func showLog(_ sender: Any?) {
         onShowLog?()
     }
+
+    func submitConnection() { connect(nil) }
 
     @objc private func connect(_ sender: Any?) {
         let host = hostField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 final class MainWindowController: NSWindowController, NSWindowDelegate,
                                   RDPMacClientDelegate, NSMenuItemValidation {
-    private let profileStore = ProfileStore()
+    private let profileStore = ProfileStore.shared
     private let formView = ConnectFormView()
     private let sessionView = SessionView()
     private var client: RDPMacClient?
@@ -21,20 +21,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     private var currentPort = 3389
     private var lastRemoteSize = (width: 0, height: 0)
 
-    convenience init() {
+    static let sessionDidChange = Notification.Name("RDPMacSessionDidChange")
+    var runningProfileID: UUID? { sessionActive ? lastRequest?.profileID : nil }
+    var isConnected: Bool { connected }
+    var onClose: ((MainWindowController) -> Void)?
+    var onActivate: ((MainWindowController) -> Void)?
+    private var closingSession = false
+    private var clipboardActive = false
+    private let sessionID = String(UUID().uuidString.prefix(8))
+
+    convenience init(showWindow: Bool = true) {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1020, height: 700),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered,
                               defer: false)
+        window.tabbingMode = .disallowed
         window.title = "RDP Mac"
         window.minSize = NSSize(width: 780, height: 600)
         window.center()
-        window.setFrameAutosaveName("RDPMacMainWindow")
         self.init(window: window)
+        window.setFrameAutosaveName("RDPMacMainWindow-\(sessionID)")
         window.delegate = self
         buildConnections()
         showForm(message: nil, isError: false)
-        window.makeKeyAndOrderFront(nil)
+        if showWindow { window.makeKeyAndOrderFront(nil) }
     }
 
     private func buildConnections() {
@@ -53,7 +63,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         sessionView.onRetry = { [weak self] in self?.retryConnection() }
         sessionView.onSettings = { [weak self] in self?.showSettings(nil) }
 
-        LogStore.shared.append("RDP Mac запущен. Профилей: \(profileStore.profiles.count)", level: 0)
+        LogStore.shared.append("Сессия создана. Профилей: \(profileStore.profiles.count)", level: 0)
     }
 
     private func showForm(message: String?, isError: Bool) {
@@ -102,12 +112,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         currentPort = request.port
         lastRequest = request
         legacyPromptShown = false
+        window.title = "\(request.host):\(request.port) — RDP Mac"
 
         let account = KeychainStore.account(host: request.host,
                                             port: request.port,
                                             domain: request.domain,
                                             username: request.username)
-        if request.savePassword {
+        if request.savePassword, !request.password.isEmpty {
             if KeychainStore.save(password: request.password, account: account) {
                 LogStore.shared.append("Пароль сохранён в Keychain для \(request.host):\(request.port)",
                                        level: 0)
@@ -115,6 +126,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
                 LogStore.shared.append("Не удалось сохранить пароль в Keychain", level: 1)
             }
         } else {
+            // An empty password must not create an auto-connect entry, and
+            // clearing the checkbox removes any previously saved password.
             KeychainStore.delete(account: account)
         }
 
@@ -127,6 +140,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
 
         let newClient = RDPMacClient()
         newClient.delegate = self
+        // Do not let a background window touch the shared pasteboard even for
+        // the short interval before AppDelegate activates the new window.
+        newClient.setClipboardActive(clipboardActive)
         client = newClient
         sessionView.rdpView.client = newClient
 
@@ -146,13 +162,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         } catch {
             let message = (error as NSError).localizedDescription
             LogStore.shared.append(message, level: 2)
-            showForm(message: message, isError: true)
+            newClient.delegate = nil
+            newClient.disconnect()
+            sessionView.rdpView.client = nil
             client = nil
+            sessionActive = false
+            connected = false
+            showForm(message: message, isError: true)
             return
         }
 
         sessionActive = true
         connected = false
+        NotificationCenter.default.post(name: Self.sessionDidChange, object: self)
         clipboardDiagnostics = newClient.clipboardDiagnostics()
         showSessionView()
         sessionView.showConnecting("Сервер \(request.host):\(request.port), пользователь "
@@ -205,18 +227,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         let updated = request.withLegacyTLS()
         lastRequest = updated
         formView.setLegacyTLS(true)
-        if let id = request.profileID,
-           var profile = profileStore.profiles.first(where: { $0.id == id }) {
-            profile.legacyTLS = true
-            profileStore.upsert(profile)
-            LogStore.shared.append("Для профиля включён совместимый TLS (SECLEVEL=0)", level: 1)
-        }
+        // Do not persist an insecure compatibility mode automatically. The
+        // warning applies to this retry; the user must explicitly opt in again
+        // if they want the profile to use it after a restart.
         LogStore.shared.append("Повтор подключения с совместимым TLS (SECLEVEL=0)", level: 1)
         connect(updated)
         return true
     }
 
     // MARK: - Profiles and passwords
+
+    func openProfile(_ profile: Profile) {
+        selectProfile(profile)
+        if profile.savePassword && !formView.currentPassword.isEmpty {
+            formView.submitConnection()
+        }
+    }
+
+    func selectProfile(_ profile: Profile) {
+        didInitialProfileSelection = true
+        formView.setProfiles(profileStore.profiles, selectedID: profile.id)
+        profileSelected(profile.id)
+    }
+
+    func setClipboardActive(_ active: Bool) {
+        clipboardActive = active
+        client?.setClipboardActive(active)
+        if !active { client?.sendModifierFlags(0) }
+    }
 
     private func profileSelected(_ id: UUID?) {
         guard let id, let profile = profileStore.profiles.first(where: { $0.id == id }) else {
@@ -292,6 +330,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
 
     func rdpClient(_ client: RDPMacClient, didChange state: RDPMacConnectionState,
                    message: String) {
+        defer { NotificationCenter.default.post(name: Self.sessionDidChange, object: self) }
         switch state {
         case .connecting:
             sessionView.showConnecting(message)
@@ -319,11 +358,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     func rdpClientDidConnect(_ client: RDPMacClient) {
         connected = true
         sessionActive = true
+        NotificationCenter.default.post(name: Self.sessionDidChange, object: self)
         lastRemoteSize = (width: Int(client.frameWidth), height: Int(client.frameHeight))
         sessionView.showConnected(width: lastRemoteSize.width, height: lastRemoteSize.height)
         sessionView.updateClipboard(client.clipboardDiagnostics())
         sessionView.rdpView.needsDisplay = true
-        window?.title = "\(currentHost):\(currentPort) — RDP Mac"
+        window?.title = "\(currentHost):\(currentPort) · \(lastRequest?.username ?? "") — RDP Mac"
         LogStore.shared.append("Сеанс установлен: \(lastRemoteSize.width)×\(lastRemoteSize.height)",
                                level: 0)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
@@ -354,7 +394,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func rdpClient(_ client: RDPMacClient, didLogMessage message: String, level: Int) {
-        LogStore.shared.append(message, level: level)
+        LogStore.shared.append("[\(sessionID) \(currentHost):\(currentPort)] \(message)", level: level)
     }
 
     func rdpClient(_ client: RDPMacClient, didDisconnectWithError error: String?) {
@@ -485,6 +525,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
                                           ?? clipboardDiagnostics,
                                       session: sessionDescription())
         diagnosticsController?.setSessionActive(connected)
+        diagnosticsController?.window?.title = "Буфер — \(currentHost):\(currentPort)"
         diagnosticsController?.showWindow(nil)
         diagnosticsController?.window?.makeKeyAndOrderFront(nil)
     }
@@ -533,24 +574,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     @objc func showHelp(_ sender: Any?) {
         let alert = NSAlert()
         alert.messageText = "RDP Mac: что уже работает"
-        alert.informativeText = """
-        Работает:
-        • текстовый буфер обмена в обе стороны (CF_UNICODETEXT; CF_TEXT — best effort);
-        • русский и английский ввод, Unicode, многострочный текст;
-        • мышь, колесо, боковые кнопки, Ctrl+Alt+Delete (Ctrl+Alt+End);
-        • полноэкранный режим, масштаб Retina, изменение разрешения через DisplayControl;
-        • NLA и TLS с обязательным подтверждением неизвестного сертификата;
-        • профили без паролей, пароль — только в Keychain по согласию;
-        • журнал подключения без содержимого буфера и экспорт журнала.
-
-        Пока не поддерживается:
-        • изображения, файлы, перенаправление папок и принтеров;
-        • звук, камера, смарт-карты, IME (китайский/японский ввод);
-        • автоматическое переподключение при обрыве сети (есть кнопка «Переподключиться»).
-
-        Ограничения, заданные сервером (запрет буфера обмена групповой политикой,
-        отключённый CLIPRDR), клиент обойти не может.
-        """
+        alert.informativeText = HelpText.supported
         alert.addButton(withTitle: "Понятно")
         alert.runModal()
     }
@@ -620,6 +644,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         scheduleRemoteResize()
     }
 
+    func windowDidBecomeMain(_ notification: Notification) {
+        onActivate?(self)
+        if !sessionActive {
+            formView.setProfiles(profileStore.profiles, selectedID: formView.selectedProfile)
+        }
+    }
+
+    func windowDidResignMain(_ notification: Notification) { setClipboardActive(false) }
+
     func windowDidBecomeKey(_ notification: Notification) {
         if connected {
             window?.makeFirstResponder(sessionView.rdpView)
@@ -631,18 +664,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if closingSession { return true }
         if sessionActive || client?.state == .connecting || client?.state == .disconnecting {
             let alert = NSAlert()
-            alert.messageText = "Завершить приложение и отключиться от сервера?"
-            alert.informativeText = "Активный RDP-сеанс будет закрыт, ресурсы освобождены."
-            alert.addButton(withTitle: "Отключиться и закрыть")
+            alert.messageText = "Отключить эту сессию и закрыть окно?"
+            alert.informativeText = "Остальные подключения продолжат работу."
+            alert.addButton(withTitle: "Отключить и закрыть")
             alert.addButton(withTitle: "Отмена")
-            if alert.runModal() == .alertFirstButtonReturn {
-                NSApp.terminate(nil)
-            }
+            guard alert.runModal() == .alertFirstButtonReturn else { return false }
+            closingSession = true
+            prepareForTermination { [weak self] in self?.window?.performClose(nil) }
             return false
         }
         return true
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        setClipboardActive(false)
+        resizeTimer?.invalidate()
+        client?.delegate = nil
+        client?.disconnect()
+        diagnosticsController?.close()
+        logController?.close()
+        onClose?(self)
     }
 
     func prepareForTermination(_ completion: @escaping () -> Void) {
@@ -658,8 +702,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         }
         client.disconnect()
         let deadline = Date().addingTimeInterval(3.0)
-        var poll: (() -> Void)!
-        poll = {
+        func poll() {
             if client.state == .disconnected || client.state == .failed || client.state == .idle
                 || Date() > deadline {
                 completion()

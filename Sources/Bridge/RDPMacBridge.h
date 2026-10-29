@@ -146,6 +146,7 @@ typedef NS_ENUM(NSInteger, RDPMacCertificateDecision) {
 /// Copies the latest frame into dst (BGRA, little-endian).
 /// Returns NO if no frame is available.
 - (BOOL)copyFrameIntoBuffer:(void *)dst
+                   capacity:(size_t)capacity
                      stride:(size_t)stride
                       width:(size_t *)width
                      height:(size_t *)height;
@@ -156,6 +157,8 @@ typedef NS_ENUM(NSInteger, RDPMacCertificateDecision) {
 - (RDPMacClipboardDiagnostics *)clipboardDiagnostics;
 /// Re-advertise the local clipboard to the remote side (Mac -> Windows).
 - (void)clipboardSendLocal;
+/// Main-thread only. Only the foreground session may use the shared pasteboard.
+- (void)setClipboardActive:(BOOL)active;
 /// Ask the remote side for its Unicode clipboard text (Windows -> Mac).
 - (void)clipboardRequestRemote;
 /// Re-run the full negotiation in both directions.

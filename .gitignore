@@ -5,6 +5,15 @@ vendor/build-freerdp/
 vendor/freerdp-install/
 vendor/freerdp-*.tar.gz
 vendor/freerdp-build.log
+vendor/openssl-3.6.4/
+vendor/openssl-3.6.4.tar.gz
+vendor/openssl-3.6.4.tar.gz.part
+vendor/build-openssl/
+vendor/openssl-install/
+vendor/openssl-build.log
+
+# Generated icon intermediates; Resources/RDPMac.icns is committed
+Resources/icon.iconset/
 
 # macOS
 .DS_Store

@@ -87,6 +87,7 @@ final class RDPView: NSView {
             var copiedWidth = 0
             var copiedHeight = 0
             let ok = client.copyFrame(intoBuffer: base,
+                                      capacity: raw.count,
                                       stride: stride,
                                       width: &copiedWidth,
                                       height: &copiedHeight)
@@ -102,7 +103,7 @@ final class RDPView: NSView {
                                       height: copiedHeight,
                                       bitsPerComponent: 8,
                                       bitsPerPixel: 32,
-                                      bytesPerRow: copiedWidth * 4,
+                                      bytesPerRow: stride,
                                       space: CGColorSpaceCreateDeviceRGB(),
                                       bitmapInfo: bitmapInfo,
                                       provider: provider,

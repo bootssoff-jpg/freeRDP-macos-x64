@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"
+     viewBox="0 0 1024 1024" role="img"
+     aria-label="RDP Mac: two connected windows exchanging data">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#071426"/>
+      <stop offset="0.55" stop-color="#0b2b55"/>
+      <stop offset="1" stop-color="#124f89"/>
+    </linearGradient>
+    <linearGradient id="blue" gradientUnits="userSpaceOnUse"
+                    x1="120" y1="120" x2="900" y2="900">
+      <stop offset="0" stop-color="#1495ff"/>
+      <stop offset="1" stop-color="#43d5ff"/>
+    </linearGradient>
+    <linearGradient id="teal" gradientUnits="userSpaceOnUse"
+                    x1="120" y1="900" x2="900" y2="120">
+      <stop offset="0" stop-color="#22d6c3"/>
+      <stop offset="1" stop-color="#71fff1"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#00101f"
+                    flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <!-- macOS tile. The transparent margin is intentional; do not crop it. -->
+  <rect x="40" y="40" width="944" height="944" rx="214" fill="url(#tile)"/>
+  <rect x="41" y="41" width="942" height="942" rx="213" fill="none"
+        stroke="#ffffff" stroke-opacity="0.10" stroke-width="2"/>
+
+  <g filter="url(#shadow)">
+    <!-- Upper cobalt window and an arrow travelling to Windows. -->
+    <rect x="150" y="220" width="520" height="300" rx="48" fill="none"
+          stroke="url(#blue)" stroke-width="64"/>
+    <path d="M604 370h190" fill="none" stroke="url(#blue)" stroke-width="64"
+          stroke-linecap="round"/>
+    <path d="M790 306l96 64-96 64z" fill="url(#blue)"/>
+
+    <!-- Lower turquoise window with the reply travelling back to the Mac. -->
+    <rect x="354" y="504" width="520" height="300" rx="48" fill="none"
+          stroke="url(#teal)" stroke-width="64"/>
+    <path d="M420 654H230" fill="none" stroke="url(#teal)" stroke-width="64"
+          stroke-linecap="round"/>
+    <path d="M234 590l-96 64 96 64z" fill="url(#teal)"/>
+  </g>
+
+  <!-- Small highlight accents keep the mark readable at Dock size. -->
+  <path d="M194 300c0-14 10-24 24-24h356" fill="none" stroke="#ffffff"
+        stroke-opacity="0.22" stroke-width="12" stroke-linecap="round"/>
+  <path d="M830 724c0 14-10 24-24 24H450" fill="none" stroke="#ffffff"
+        stroke-opacity="0.28" stroke-width="12" stroke-linecap="round"/>
+</svg>

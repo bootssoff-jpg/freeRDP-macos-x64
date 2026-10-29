@@ -88,6 +88,12 @@ struct Profile: Codable, Identifiable, Equatable {
     var resolution: ResolutionMode = .window
     /// Optional keeps old profiles.json files (without this key) decodable.
     var legacyTLS: Bool? = nil
+    var group: String? = nil
+
+    var groupName: String {
+        let value = group?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? "Без группы" : value
+    }
 
     var displayName: String {
         if !name.isEmpty { return name }
@@ -101,6 +107,8 @@ struct Profile: Codable, Identifiable, Equatable {
 }
 
 final class ProfileStore {
+    static let shared = ProfileStore()
+    static let didChange = Notification.Name("RDPMacProfilesDidChange")
     private(set) var profiles: [Profile] = []
     private let fileURL: URL
 
@@ -131,11 +139,13 @@ final class ProfileStore {
             profiles.append(profile)
         }
         persist()
+        NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
     func delete(id: UUID) {
         profiles.removeAll { $0.id == id }
         persist()
+        NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
     private func persist() {

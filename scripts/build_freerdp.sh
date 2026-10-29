@@ -15,6 +15,7 @@ LOG="$VENDOR/freerdp-build.log"
 PINNED_COMMIT="97eff6ddfbbfaa8e42a126d362686bd001ff8bdc"
 PINNED_TAG="3.32.2"
 MIN_MACOS="12.0"
+OPENSSL_PREFIX="$VENDOR/openssl-install"
 
 FORCE=0
 if [ "${1:-}" = "--force" ]; then
@@ -30,21 +31,29 @@ if [ -f "$INSTALL/lib/libfreerdp-client3.a" ] &&
    [ -f "$INSTALL/.rdpmac-build-info" ] && [ "$FORCE" -eq 0 ]; then
     if grep -q "FreeRDP_COMMIT=$PINNED_COMMIT" "$INSTALL/.rdpmac-build-info" &&
        grep -q "BUILD_ARCH=x86_64" "$INSTALL/.rdpmac-build-info" &&
+       grep -Fq "OPENSSL_PREFIX=$OPENSSL_PREFIX" "$INSTALL/.rdpmac-build-info" &&
        lipo -info "$INSTALL/lib/libfreerdp-client3.a" 2>/dev/null | grep -q x86_64; then
         echo "FreeRDP $PINNED_TAG (x86_64) already built at $INSTALL (use --force to rebuild)."
         exit 0
     fi
-    echo "Existing FreeRDP build does not match the pinned version/architecture; rebuilding."
+    echo "Existing FreeRDP build does not match the pinned version/architecture/OpenSSL; rebuilding."
 fi
 
-if command -v brew >/dev/null 2>&1; then
-    OPENSSL_PREFIX="$(brew --prefix openssl@3 2>/dev/null || true)"
-fi
-OPENSSL_PREFIX="${OPENSSL_PREFIX:-/usr/local/opt/openssl@3}"
+# Build or reuse the project-local OpenSSL. A Homebrew bottle on Intel may
+# declare macOS 15 as its minimum, which would silently raise the app's
+# deployment target above the documented macOS 12.
+"$ROOT/scripts/build_openssl.sh"
 [ -f "$OPENSSL_PREFIX/lib/libssl.3.dylib" ] ||
-    fail "OpenSSL 3 not found at $OPENSSL_PREFIX. Install with: brew install openssl@3"
+    fail "OpenSSL 3 not found at $OPENSSL_PREFIX"
 [ -f "$OPENSSL_PREFIX/include/openssl/ssl.h" ] ||
     fail "OpenSSL 3 headers not found at $OPENSSL_PREFIX/include"
+
+# CMake splits compiler flags on spaces. The repository path may contain a
+# space, so expose OpenSSL through a short space-free temporary symlink.
+OPENSSL_LINK="$(mktemp -d /tmp/rdpmac-openssl-link.XXXXXX)"
+trap 'rm -rf "$OPENSSL_LINK"' EXIT
+ln -s "$OPENSSL_PREFIX" "$OPENSSL_LINK/prefix"
+OPENSSL_BUILD_PREFIX="$OPENSSL_LINK/prefix"
 
 if [ ! -d "$SRC/.git" ]; then
     rm -rf "$SRC"
@@ -77,7 +86,7 @@ CMAKE_FLAGS=(
     # Neutral baked-in prefix: the actual install goes to vendor/freerdp-install
     # via --prefix below, so release binaries do not embed the builder's home path.
     -DCMAKE_INSTALL_PREFIX="/opt/rdpmac"
-    -DCMAKE_C_FLAGS="-I$OPENSSL_PREFIX/include"
+    -DCMAKE_C_FLAGS="-I$OPENSSL_BUILD_PREFIX/include"
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
     -DBUILD_SHARED_LIBS=OFF
     -DBUILD_TESTING=OFF
@@ -130,10 +139,10 @@ CMAKE_FLAGS=(
     -DCHANNEL_TSMF=OFF
     -DCHANNEL_URBDRC=OFF
     -DCHANNEL_VIDEO=OFF
-    -DOPENSSL_ROOT_DIR="$OPENSSL_PREFIX"
-    -DOPENSSL_INCLUDE_DIR="$OPENSSL_PREFIX/include"
-    -DOPENSSL_SSL_LIBRARY="$OPENSSL_PREFIX/lib/libssl.dylib"
-    -DOPENSSL_CRYPTO_LIBRARY="$OPENSSL_PREFIX/lib/libcrypto.dylib"
+    -DOPENSSL_ROOT_DIR="$OPENSSL_BUILD_PREFIX"
+    -DOPENSSL_INCLUDE_DIR="$OPENSSL_BUILD_PREFIX/include"
+    -DOPENSSL_SSL_LIBRARY="$OPENSSL_BUILD_PREFIX/lib/libssl.dylib"
+    -DOPENSSL_CRYPTO_LIBRARY="$OPENSSL_BUILD_PREFIX/lib/libcrypto.dylib"
     -DWITH_JPEG=OFF
     -DWITH_WEBP=OFF
 )
@@ -163,17 +172,24 @@ if nm -u "$INSTALL/lib/libfreerdp3.a" 2>/dev/null | grep -q OPENSSL_sk_set_cmp_t
     fail "FreeRDP was compiled against OpenSSL 4 headers; ABI mismatch with OpenSSL 3"
 fi
 
+OPENSSL_VERSION_STRING="$("$OPENSSL_PREFIX/bin/openssl" version 2>/dev/null || true)"
+if [ -z "$OPENSSL_VERSION_STRING" ] && [ -f "$OPENSSL_PREFIX/.rdpmac-build-info" ]; then
+    OPENSSL_VERSION_STRING="$(grep '^OPENSSL_VERSION=' "$OPENSSL_PREFIX/.rdpmac-build-info" |
+        head -1 | cut -d= -f2-)"
+fi
+[ -n "$OPENSSL_VERSION_STRING" ] || OPENSSL_VERSION_STRING=unknown
+
 {
     echo "FreeRDP_VERSION=$PINNED_TAG"
     echo "FreeRDP_COMMIT=$PINNED_COMMIT"
     echo "BUILD_ARCH=x86_64"
     echo "MIN_MACOS=$MIN_MACOS"
     echo "OPENSSL_PREFIX=$OPENSSL_PREFIX"
-    echo "OPENSSL_VERSION=$("$OPENSSL_PREFIX/bin/openssl" version 2>/dev/null || echo unknown)"
+    echo "OPENSSL_VERSION=$OPENSSL_VERSION_STRING"
     echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } >"$INSTALL/.rdpmac-build-info"
 
 FREERDP_VERSION_STRING="$(grep -m1 '^#define FREERDP_VERSION ' \
     "$INSTALL/include/freerdp3/freerdp/version.h" | cut -d'"' -f2)"
 echo "FreeRDP ${FREERDP_VERSION_STRING:-unknown} installed to $INSTALL"
-echo "OpenSSL: $("$OPENSSL_PREFIX/bin/openssl" version 2>/dev/null || echo "$OPENSSL_PREFIX")"
+echo "OpenSSL: $OPENSSL_VERSION_STRING"

@@ -15,12 +15,13 @@ final class DiagnosticsWindowController: NSWindowController {
     private var lastReport = ""
 
     convenience init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 620),
+        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 620),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable],
                               backing: .buffered,
                               defer: false)
         window.title = "Диагностика буфера обмена"
         window.minSize = NSSize(width: 640, height: 480)
+        window.isReleasedWhenClosed = false
         window.center()
         window.setFrameAutosaveName("RDPMacDiagnosticsWindow")
         self.init(window: window)

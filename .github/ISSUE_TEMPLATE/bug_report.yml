@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible problem with RDP Mac
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste passwords, clipboard contents, private hostnames or IP
+        addresses. Use demo data or redact them.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Menu → About, or `CFBundleShortVersionString` from the bundle.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and architecture
+      placeholder: "macOS 12.7.6, Intel x86_64"
+    validations:
+      required: true
+  - type: input
+    id: server
+    attributes:
+      label: Windows server version
+      description: Windows Server 2019/2022, Windows 10/11, etc.
+      placeholder: "Windows Server 2022"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a session to ...
+        2. Copy ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Clipboard diagnostics and exported log. Remove all content, passwords, hosts and usernames.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed passwords, clipboard text and personal data.
+          required: true

@@ -25,10 +25,22 @@ FreeRDP includes WinPR under the same license.
 - Bundled files: `libssl.3.dylib`, `libcrypto.3.dylib` in
   `RDP Mac.app/Contents/Frameworks/`.
 
-OpenSSL is linked dynamically and copied into the application bundle so the
-app does not require Homebrew at runtime. The build scripts pin OpenSSL 3
+OpenSSL is built from the official 3.6.4 source tarball
+(`https://github.com/openssl/openssl/releases/download/openssl-3.6.4/openssl-3.6.4.tar.gz`,
+SHA-256 `9bffaa1ad1e07b354c21bd3324ec02fa15579f45a7d0494b3e74bc449b7333ef`)
+with a macOS 12.0 deployment target, then copied into the application bundle.
+The app does not require Homebrew at runtime. The build scripts pin OpenSSL 3
 headers and libraries to avoid an ABI mismatch with OpenSSL 4 installations
 that may be linked from `/usr/local/include/openssl` on Intel Homebrew.
+
+## FreeRDP logo and trademarks
+
+The FreeRDP repository contains logo artwork under
+`resources/FreeRDP_Icon.svg`, `FreeRDP.ico` and related files. The FreeRDP code is
+Apache-2.0, but Apache-2.0 §6 does not grant trademark or logo rights, and the
+project publishes no separate permission for third-party product branding.
+RDP Mac therefore does not use the FreeRDP logo as its icon or branding. The
+official logo files are not included in this repository.
 
 ## Apple frameworks
 

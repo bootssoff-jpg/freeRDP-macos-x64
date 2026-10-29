@@ -24,35 +24,45 @@ jobs:
           cmake --version
 
       - name: Install dependencies
-        run: brew install cmake openssl@3
+        run: brew install cmake
 
-      - name: Cache FreeRDP build
+      - name: Cache dependency builds
         uses: actions/cache@v4
         with:
           path: |
             vendor/FreeRDP-3.32.2
             vendor/freerdp-install
-          key: freerdp-3.32.2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build_freerdp.sh') }}
+            vendor/openssl-3.6.4
+            vendor/openssl-install
+          key: deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build_freerdp.sh', 'scripts/build_openssl.sh') }}
 
-      - name: Build FreeRDP 3.32.2
+      - name: Build OpenSSL and FreeRDP 3.32.2
         run: ./scripts/build_freerdp.sh
 
       - name: Run automated tests
         run: ./scripts/run_tests.sh
 
-      - name: Build app bundle
-        run: ./scripts/build_app.sh
+      - name: Package unsigned release
+        run: make dist
 
-      - name: Verify architecture, rpaths and signature
+      - name: Verify architecture, minimum macOS, rpaths and signature
         run: |
           lipo -info "build/RDP Mac.app/Contents/MacOS/RDPMac" | grep x86_64
           otool -L "build/RDP Mac.app/Contents/MacOS/RDPMac" | grep -E '@rpath/libssl|@rpath/libcrypto'
           ! otool -L "build/RDP Mac.app/Contents/MacOS/RDPMac" | grep -E '/usr/local|/opt/homebrew'
+          for f in "build/RDP Mac.app/Contents/MacOS/RDPMac" build/"RDP Mac.app"/Contents/Frameworks/*.dylib; do
+            minos="$(otool -l "$f" | awk '/LC_BUILD_VERSION/{x=1} x&&/minos/{print $2; exit}')"
+            [ "$(printf '%s\n' 12.0 "$minos" | sort -V | head -1)" = "12.0" ]
+          done
           codesign --verify --deep --strict "build/RDP Mac.app"
+          (cd build/dist && shasum -a 256 -c SHA256SUMS)
 
-      - name: Upload unsigned app
+      - name: Upload unsigned release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: RDP-Mac-1.0.0-x86_64-unsigned
-          path: build/dist/RDP-Mac-1.0.0-x86_64-unsigned.zip
+          path: |
+            build/dist/RDP-Mac-1.0.0-x86_64-unsigned.zip
+            build/dist/RDP-Mac-1.0.0-x86_64-unsigned.dmg
+            build/dist/SHA256SUMS
           if-no-files-found: error

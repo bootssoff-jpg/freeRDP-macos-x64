@@ -46,6 +46,7 @@ typedef struct rdp_mac_context
 @property (nonatomic, assign, readonly) BOOL monitorReady;
 
 - (instancetype)initWithEnabled:(BOOL)enabled;
+- (void)setSynchronizationActive:(BOOL)active;
 - (void)attachChannel:(CliprdrClientContext *)cliprdr;
 - (void)detachChannel;
 /// Thread-safe: drops the channel pointer before FreeRDP frees the context.

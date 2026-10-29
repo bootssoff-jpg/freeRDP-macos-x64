@@ -166,12 +166,14 @@ int main(void)
 
         // Echo of our own text must not rewrite the pasteboard or start a loop.
         const int listsBeforeEcho = gFormatListCalls;
+        [controller requestRemoteClipboard];
         [controller handleServerFormatDataResponse:RDPMacClipboardEncodeText(localText, 13, NULL)
                                             flags:CB_RESPONSE_OK];
         expectEqualStrings([pasteboard stringForType:NSPasteboardTypeString], localText,
                            @"echo keeps pasteboard unchanged");
         expect(gFormatListCalls == listsBeforeEcho, @"echo does not advertise formats again");
 
+        [controller requestRemoteClipboard];
         [controller handleServerFormatDataResponse:[NSData data] flags:CB_RESPONSE_FAIL];
         RDPMacClipboardDiagnostics *afterFailure = [controller diagnostics];
         expect(afterFailure.failureCount > 0, @"failure counter incremented");
@@ -186,6 +188,47 @@ int main(void)
                @"diagnostics report does not contain clipboard contents");
         expect([report containsString:@"CF_UNICODETEXT"], @"report lists formats");
         expect([report containsString:@"Содержимое буфера"], @"report states no content is logged");
+
+        // A response requested by the foreground session must not overwrite
+        // the Mac clipboard after focus moves to another window.
+        [controller requestRemoteClipboard];
+        [controller setSynchronizationActive:NO];
+        NSString *otherSessionText = @"Foreground session B";
+        [pasteboard clearContents];
+        [pasteboard setString:otherSessionText forType:NSPasteboardTypeString];
+        int requestsBeforeInactive = gDataRequestCalls;
+        int listsBeforeInactive = gFormatListCalls;
+        [controller handleServerFormatListIds:@[@13] names:@[@"CF_UNICODETEXT"]];
+        [controller sendLocalClipboard];
+        [controller requestRemoteClipboard];
+        expect(gDataRequestCalls == requestsBeforeInactive && gFormatListCalls == listsBeforeInactive,
+               @"inactive session neither requests nor advertises Mac clipboard");
+        [controller handleServerFormatDataRequestFormat:13];
+        expect(gLastResponseFlags == CB_RESPONSE_FAIL,
+               @"inactive session cannot read another session's clipboard");
+        [controller setSynchronizationActive:YES];
+        [controller handleServerFormatDataResponse:RDPMacClipboardEncodeText(@"Late session A", 13, NULL)
+                                            flags:CB_RESPONSE_OK];
+        expectEqualStrings([pasteboard stringForType:NSPasteboardTypeString], otherSessionText,
+                           @"late response is ignored even after reactivation");
+
+        // Responses do not identify their requested format. Serialize requests
+        // and defer the latest format list instead of decoding an old ANSI
+        // response as the newer Unicode response.
+        int beforeSerial = gDataRequestCalls;
+        [controller handleServerFormatListIds:@[@1] names:@[@"CF_TEXT"]];
+        [controller handleServerFormatListIds:@[@13] names:@[@"CF_UNICODETEXT"]];
+        expect(gDataRequestCalls == beforeSerial + 1, @"only one outstanding CLIPRDR request");
+        [controller handleServerFormatDataResponse:RDPMacClipboardEncodeText(@"old clipboard", 1, NULL)
+                                            flags:CB_RESPONSE_OK];
+        expect(gDataRequestCalls == beforeSerial + 2 && [controller diagnostics].pendingRequest != nil,
+               @"old response releases deferred request without clearing its pending state");
+        expectEqualStrings([pasteboard stringForType:NSPasteboardTypeString], otherSessionText,
+                           @"obsolete ANSI response does not corrupt Unicode clipboard");
+        [controller handleServerFormatDataResponse:RDPMacClipboardEncodeText(@"Newest clipboard", 13, NULL)
+                                            flags:CB_RESPONSE_OK];
+        expectEqualStrings([pasteboard stringForType:NSPasteboardTypeString], @"Newest clipboard",
+                           @"latest queued response is applied");
 
         [controller handleChannelDisconnected];
         expect([controller diagnostics].channelConnected == NO, @"channel disconnect updates state");

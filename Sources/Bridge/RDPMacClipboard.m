@@ -41,6 +41,9 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     NSInteger _receiveCount;
     NSInteger _failureCount;
     BOOL _invalidated;
+    BOOL _synchronizationActive;
+    BOOL _discardPendingResponse;
+    uint32_t _queuedRemoteFormat;
 }
 
 - (instancetype)initWithEnabled:(BOOL)enabled
@@ -48,6 +51,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     self = [super init];
     if (self) {
         _enabled = enabled;
+        _synchronizationActive = YES;
         _pasteboard = [NSPasteboard generalPasteboard];
         _remoteFormatIds = @[];
         _remoteFormatNames = @[];
@@ -93,6 +97,25 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
                                                    }];
     // The timer must keep firing while a menu or modal panel is open.
     [[NSRunLoop mainRunLoop] addTimer:_pollTimer forMode:NSRunLoopCommonModes];
+}
+
+- (void)setSynchronizationActive:(BOOL)active
+{
+    if (_synchronizationActive == active)
+        return;
+    _synchronizationActive = active;
+    if (!active) {
+        if (_pending)
+            _discardPendingResponse = YES;
+        _queuedRemoteFormat = 0;
+    } else if (_enabled && _monitorReady) {
+        // The Mac clipboard remains authoritative on focus changes. Remote
+        // text is requested only after the next server advertisement or a
+        // manual request, never from an inactive session.
+        _lastChangeCount = _pasteboard.changeCount;
+        [self sendLocalClipboard];
+    }
+    [self notify];
 }
 
 - (void)attachChannel:(CliprdrClientContext *)cliprdr
@@ -142,6 +165,8 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     _pending = NO;
     _pendingFormat = 0;
     _pendingGeneration = 0;
+    _discardPendingResponse = NO;
+    _queuedRemoteFormat = 0;
     _remoteFormatIds = @[];
     _remoteFormatNames = @[];
     _lastLocalText = nil;
@@ -230,7 +255,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
 - (BOOL)sendLocalFormatListAndCount:(BOOL)count
 {
-    if (!_enabled || !_monitorReady)
+    if (!_enabled || !_synchronizationActive || !_monitorReady)
         return NO;
 
     CLIPRDR_FORMAT format = {0};
@@ -269,7 +294,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
         [self log:@"CLIPRDR: отправка отключена в настройках" level:1];
         return;
     }
-    if (!_monitorReady || !_cliprdr) {
+    if (!_synchronizationActive || !_monitorReady || !_cliprdr) {
         [self log:@"CLIPRDR: канал ещё не готов" level:1];
         return;
     }
@@ -318,7 +343,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
 - (void)handleServerFormatDataRequestFormat:(uint32_t)formatId
 {
-    if (!_enabled) {
+    if (!_enabled || !_synchronizationActive) {
         _failureCount++;
         _lastError = @"буфер обмена отключён в настройках профиля";
         [self sendFailResponseForFormat:formatId];
@@ -422,7 +447,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     // the advertised formats is supported.
     [self sendFormatListResponseOK];
 
-    if (!_enabled) {
+    if (!_enabled || !_synchronizationActive) {
         [self notify];
         return;
     }
@@ -436,12 +461,6 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
         return;
     }
 
-    // A newer format list supersedes a pending request.
-    if (_pending) {
-        [_requestTimer invalidate];
-        _requestTimer = nil;
-        _pending = NO;
-    }
     [self requestRemoteFormat:hasUnicode ? RDPMacClipboardFormatUnicodeText
                                         : RDPMacClipboardFormatText];
     [self notify];
@@ -458,8 +477,14 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
 - (void)requestRemoteFormat:(uint32_t)formatId
 {
-    if (!_enabled || !_monitorReady) {
+    if (!_enabled || !_synchronizationActive || !_monitorReady) {
         [self log:@"CLIPRDR: канал не готов для запроса данных" level:1];
+        return;
+    }
+
+    if (_pending) {
+        _queuedRemoteFormat = formatId;
+        _discardPendingResponse = YES;
         return;
     }
 
@@ -508,7 +533,10 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 {
     if (!_pending)
         return;
-    _pending = NO;
+    // CLIPRDR responses carry no request ID: keep the outstanding request
+    // until its reply arrives, otherwise a late reply could satisfy a newer
+    // request with the wrong format. It must never update the pasteboard.
+    _discardPendingResponse = YES;
     _failureCount++;
     _lastError = [NSString stringWithFormat:@"тайм-аут ожидания буфера обмена (%.0f с)",
                                             RDPMacClipboardRequestTimeout];
@@ -560,12 +588,22 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
 - (void)handleServerFormatDataResponse:(NSData *)data flags:(uint16_t)flags
 {
-    const uint32_t format = _pending ? _pendingFormat : RDPMacClipboardFormatUnicodeText;
+    if (!_pending)
+        return;
+    const uint32_t format = _pendingFormat;
+    const BOOL discard = _discardPendingResponse || !_synchronizationActive;
     _pending = NO;
+    _discardPendingResponse = NO;
     [_requestTimer invalidate];
     _requestTimer = nil;
 
-    if (!_enabled)
+    const uint32_t queuedFormat = _queuedRemoteFormat;
+    _queuedRemoteFormat = 0;
+    if (queuedFormat && _synchronizationActive && _enabled) {
+        [self requestRemoteFormat:queuedFormat];
+        return;
+    }
+    if (!_enabled || discard)
         return;
 
     if (flags & CB_RESPONSE_FAIL) {
@@ -618,7 +656,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
 - (void)pollPasteboard
 {
-    if (!_enabled || !_monitorReady || !_cliprdr)
+    if (!_enabled || !_synchronizationActive || !_monitorReady || !_cliprdr)
         return;
 
     const NSInteger changeCount = _pasteboard.changeCount;
@@ -655,7 +693,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
         [self log:@"CLIPRDR: обмен отключён в настройках" level:1];
         return;
     }
-    if (!_monitorReady || !_cliprdr) {
+    if (!_synchronizationActive || !_monitorReady || !_cliprdr) {
         [self log:@"CLIPRDR: канал ещё не готов для запроса из Windows" level:1];
         [self notify];
         return;
@@ -695,6 +733,8 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
         return @"обмен отключён в настройках";
     if (!_channelConnected)
         return @"канал не подключён";
+    if (!_synchronizationActive)
+        return @"приостановлен: сессия не активна";
     if (!_monitorReady)
         return @"ожидание Monitor Ready";
     if (_pending)

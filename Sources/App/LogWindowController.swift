@@ -6,22 +6,24 @@ final class LogWindowController: NSWindowController {
     private let scrollView = NSScrollView()
 
     convenience init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 560),
+        let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 820, height: 560),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable],
                               backing: .buffered,
                               defer: false)
         window.title = "Журнал RDP Mac"
         window.minSize = NSSize(width: 640, height: 400)
+        window.isReleasedWhenClosed = false
         window.center()
         window.setFrameAutosaveName("RDPMacLogWindow")
         self.init(window: window)
         buildUI()
-        LogStore.shared.onChange = { [weak self] in self?.refresh() }
+        NotificationCenter.default.addObserver(self, selector: #selector(refresh),
+                                               name: LogStore.didChange, object: nil)
         refresh()
     }
 
     deinit {
-        LogStore.shared.onChange = nil
+        NotificationCenter.default.removeObserver(self)
     }
 
     private func buildUI() {
@@ -59,7 +61,7 @@ final class LogWindowController: NSWindowController {
         ])
     }
 
-    func refresh() {
+    @objc func refresh() {
         textView.string = LogStore.shared.text()
         textView.scrollToEndOfDocument(nil)
     }

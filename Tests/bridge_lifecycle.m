@@ -7,6 +7,13 @@
 
 #import <Foundation/Foundation.h>
 #import "RDPMacBridge.h"
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
+@interface RDPMacClient (FrameTest)
+- (void)framebufferConfigureWithWidth:(size_t)width height:(size_t)height;
+@end
 
 static int gFailures = 0;
 
@@ -43,10 +50,10 @@ static BOOL waitForFailure(RDPMacClient *client, NSTimeInterval timeout)
     return client.state == RDPMacConnectionStateFailed && client.lastErrorText.length > 0;
 }
 
-static BOOL startToClosedPort(RDPMacClient *client, NSError **error)
+static BOOL startToPort(RDPMacClient *client, NSInteger port, NSError **error)
 {
     return [client startWithHost:@"127.0.0.1"
-                            port:1
+                            port:port
                         username:@"test"
                           domain:@""
                         password:@"not-a-real-password"
@@ -60,10 +67,52 @@ static BOOL startToClosedPort(RDPMacClient *client, NSError **error)
                            error:error];
 }
 
+static BOOL startToClosedPort(RDPMacClient *client, NSError **error)
+{
+    return startToPort(client, 1, error);
+}
+
+static void testConcurrentConnections(void)
+{
+    // A loopback listener deliberately leaves RDP negotiation pending. This
+    // tests real independent connection threads, not Windows authentication.
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in address = {0};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = 0;
+    BOOL ready = listener >= 0 && bind(listener, (struct sockaddr *)&address, sizeof(address)) == 0
+                 && listen(listener, 4) == 0;
+    expect(ready, @"loopback listener available for concurrent connection test");
+    if (!ready) { if (listener >= 0) close(listener); return; }
+    socklen_t length = sizeof(address);
+    getsockname(listener, (struct sockaddr *)&address, &length);
+    RDPMacClient *first = [RDPMacClient new];
+    RDPMacClient *second = [RDPMacClient new];
+    NSError *error = nil;
+    expect(startToPort(first, ntohs(address.sin_port), &error), @"first concurrent connection starts");
+    expect(startToPort(second, ntohs(address.sin_port), &error), @"second concurrent connection starts");
+    pumpMainQueue(0.5);
+    expect(first.state == RDPMacConnectionStateConnecting && second.state == RDPMacConnectionStateConnecting,
+           @"two independent RDP handshakes are pending simultaneously");
+    [first disconnect];
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5.0];
+    while ((first.state == RDPMacConnectionStateConnecting || first.state == RDPMacConnectionStateDisconnecting)
+           && deadline.timeIntervalSinceNow > 0) pumpMainQueue(0.05);
+    expect(first.state == RDPMacConnectionStateFailed || first.state == RDPMacConnectionStateDisconnected,
+           @"first concurrent connection cancels cleanly");
+    expect(second.state == RDPMacConnectionStateConnecting,
+           @"cancelling the first connection does not cancel the second");
+    [second disconnect];
+    close(listener);
+    pumpMainQueue(0.5);
+}
+
 int main(void)
 {
     @autoreleasepool {
         printf("%s", RDPMacClient.selfTestReport.UTF8String);
+        testConcurrentConnections();
 
         {
             RDPMacClient *client = [[RDPMacClient alloc] init];
@@ -87,8 +136,20 @@ int main(void)
             uint8_t buffer[16] = {0};
             size_t width = 0;
             size_t height = 0;
-            expect(![client copyFrameIntoBuffer:buffer stride:16 width:&width height:&height],
+            expect(![client copyFrameIntoBuffer:buffer capacity:sizeof(buffer) stride:16 width:&width height:&height],
                    @"no framebuffer before connect");
+        }
+
+        {
+            RDPMacClient *frameClient = [RDPMacClient new];
+            [frameClient framebufferConfigureWithWidth:1024 height:480];
+            size_t capacity = 1024 * 480 * 4;
+            void *frame = malloc(capacity);
+            [frameClient framebufferConfigureWithWidth:1024 height:600];
+            size_t w = 0, h = 0;
+            expect(![frameClient copyFrameIntoBuffer:frame capacity:capacity stride:4096 width:&w height:&h],
+                   @"resize cannot overrun a destination sized for the old height");
+            free(frame);
         }
 
         RDPMacClient *client = [[RDPMacClient alloc] init];

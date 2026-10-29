@@ -15,7 +15,7 @@ final class LogStore {
     private let fileURL: URL
     private let dateFormatter: DateFormatter
 
-    var onChange: (() -> Void)?
+    static let didChange = Notification.Name("RDPMacLogDidChange")
 
     private init() {
         let logs = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first?
@@ -48,12 +48,23 @@ final class LogStore {
             } else {
                 try? data.write(to: fileURL, options: .atomic)
             }
+
+            // Keep the on-disk log bounded during long sessions, not only at
+            // the next launch. The handle is closed above before the rename.
+            let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let size = (attributes?[.size] as? NSNumber)?.intValue ?? 0
+            if size > 2 * 1024 * 1024 {
+                let backup = fileURL.deletingLastPathComponent()
+                    .appendingPathComponent("rdp.log.1")
+                try? FileManager.default.removeItem(at: backup)
+                try? FileManager.default.moveItem(at: fileURL, to: backup)
+            }
         }
 
         if Thread.isMainThread {
-            onChange?()
+            NotificationCenter.default.post(name: Self.didChange, object: self)
         } else {
-            DispatchQueue.main.async { [weak self] in self?.onChange?() }
+            DispatchQueue.main.async { NotificationCenter.default.post(name: Self.didChange, object: self) }
         }
     }
 
@@ -89,7 +100,7 @@ final class LogStore {
         writeQueue.async { [fileURL] in
             try? Data().write(to: fileURL, options: .atomic)
         }
-        onChange?()
+        NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
     var logFileURL: URL { fileURL }

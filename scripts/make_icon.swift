@@ -1,120 +1,105 @@
 #!/usr/bin/env swift
+//
+// Build the complete macOS iconset and Resources/RDPMac.icns from the approved
+// original artwork. The master is a 1254 px PNG; it is downsampled (never
+// upscaled) to the 1024 px release master and all required icon sizes.
+//
+// Usage: swift scripts/make_icon.swift [source.png]
+//
 import AppKit
-import CoreGraphics
+import Foundation
 
-let size: CGFloat = 1024
-let image = NSImage(size: NSSize(width: size, height: size))
-image.lockFocus()
-guard let ctx = NSGraphicsContext.current?.cgContext else {
-    fatalError("no graphics context")
+let scriptURL = URL(fileURLWithPath: #filePath)
+let root = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
+let sourceURL = CommandLine.arguments.count > 1
+    ? URL(fileURLWithPath: CommandLine.arguments[1])
+    : root.appendingPathComponent("Resources/Branding/rdpmac-icon-arrows-v2.png")
+let masterURL = root.appendingPathComponent("Resources/Branding/rdpmac-icon-1024.png")
+let iconsetURL = root.appendingPathComponent("Resources/icon.iconset")
+let icnsURL = root.appendingPathComponent("Resources/RDPMac.icns")
+
+func fail(_ message: String) -> Never {
+    fputs("ERROR: \(message)\n", stderr)
+    exit(1)
 }
 
-func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
-    CGColor(red: CGFloat((hex >> 16) & 0xFF) / 255,
-            green: CGFloat((hex >> 8) & 0xFF) / 255,
-            blue: CGFloat(hex & 0xFF) / 255,
-            alpha: alpha)
+guard let source = NSImage(contentsOf: sourceURL) else {
+    fail("cannot read \(sourceURL.path)")
+}
+guard source.size.width > 0, source.size.height > 0 else {
+    fail("source image has no pixels")
+}
+guard abs(source.size.width - source.size.height) < 1 else {
+    fail("source image must be square")
+}
+guard source.size.width >= 1024 else {
+    fail("source image must be at least 1024 px; got \(Int(source.size.width))")
 }
 
-// Rounded dark-blue background.
-let background = CGRect(x: 32, y: 32, width: 960, height: 960)
-ctx.saveGState()
-ctx.addPath(CGPath(roundedRect: background, cornerWidth: 208, cornerHeight: 208,
-                   transform: nil))
-ctx.clip()
-let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                          colors: [color(0x081728), color(0x144A7C)] as CFArray,
-                          locations: [0, 1])!
-ctx.drawLinearGradient(gradient,
-                       start: CGPoint(x: 40, y: 990),
-                       end: CGPoint(x: 990, y: 40),
-                       options: [])
-ctx.restoreGState()
-
-// Subtle rim.
-ctx.addPath(CGPath(roundedRect: background.insetBy(dx: 1, dy: 1),
-                   cornerWidth: 207, cornerHeight: 207, transform: nil))
-ctx.setStrokeColor(color(0xFFFFFF, 0.10))
-ctx.setLineWidth(2)
-ctx.strokePath()
-
-// Monitor.
-let monitor = CGRect(x: 196, y: 342, width: 632, height: 408)
-ctx.setFillColor(color(0xF2F7FC))
-ctx.addPath(CGPath(roundedRect: monitor, cornerWidth: 38, cornerHeight: 38,
-                   transform: nil))
-ctx.fillPath()
-
-let screen = monitor.insetBy(dx: 18, dy: 18)
-ctx.saveGState()
-ctx.addPath(CGPath(roundedRect: screen, cornerWidth: 24, cornerHeight: 24,
-                   transform: nil))
-ctx.clip()
-let screenGradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                colors: [color(0x0B2038), color(0x15507F)] as CFArray,
-                                locations: [0, 1])!
-ctx.drawLinearGradient(screenGradient,
-                       start: CGPoint(x: screen.minX, y: screen.maxY),
-                       end: CGPoint(x: screen.maxX, y: screen.minY),
-                       options: [])
-ctx.restoreGState()
-
-// Monitor stand and base.
-ctx.setFillColor(color(0xDCE8F4))
-ctx.addPath(CGPath(roundedRect: CGRect(x: 466, y: 300, width: 92, height: 46),
-                   cornerWidth: 14, cornerHeight: 14, transform: nil))
-ctx.fillPath()
-ctx.addPath(CGPath(roundedRect: CGRect(x: 378, y: 252, width: 268, height: 26),
-                   cornerWidth: 13, cornerHeight: 13, transform: nil))
-ctx.fillPath()
-
-// Clipboard: back sheet, front sheet, clip and text lines.
-let backSheet = CGRect(x: 414, y: 438, width: 196, height: 224)
-ctx.setFillColor(color(0x9FC3E2, 0.55))
-ctx.addPath(CGPath(roundedRect: backSheet, cornerWidth: 24, cornerHeight: 24,
-                   transform: nil))
-ctx.fillPath()
-
-let frontSheet = CGRect(x: 446, y: 466, width: 196, height: 224)
-ctx.setFillColor(color(0xFFFFFF))
-ctx.addPath(CGPath(roundedRect: frontSheet, cornerWidth: 24, cornerHeight: 24,
-                   transform: nil))
-ctx.fillPath()
-ctx.addPath(CGPath(roundedRect: frontSheet, cornerWidth: 24, cornerHeight: 24,
-                   transform: nil))
-ctx.setStrokeColor(color(0x0C2C4A, 0.10))
-ctx.setLineWidth(3)
-ctx.strokePath()
-
-let clip = CGRect(x: 500, y: 664, width: 88, height: 30)
-ctx.setFillColor(color(0x1F7A4D))
-ctx.addPath(CGPath(roundedRect: clip, cornerWidth: 14, cornerHeight: 14,
-                   transform: nil))
-ctx.fillPath()
-
-ctx.setFillColor(color(0x1A4E78, 0.82))
-for (index, width) in [132, 116, 140].enumerated() {
-    let y = 606 - CGFloat(index) * 48
-    ctx.addPath(CGPath(roundedRect: CGRect(x: 476, y: y, width: CGFloat(width),
-                                           height: 18),
-                       cornerWidth: 9, cornerHeight: 9, transform: nil))
-    ctx.fillPath()
+func renderPNG(size: Int) -> Data {
+    guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
+                                     pixelsWide: size,
+                                     pixelsHigh: size,
+                                     bitsPerSample: 8,
+                                     samplesPerPixel: 4,
+                                     hasAlpha: true,
+                                     isPlanar: false,
+                                     colorSpaceName: .deviceRGB,
+                                     bytesPerRow: 0,
+                                     bitsPerPixel: 0) else {
+        fail("cannot allocate \(size)x\(size) bitmap")
+    }
+    rep.size = NSSize(width: size, height: size)
+    guard let context = NSGraphicsContext(bitmapImageRep: rep) else {
+        fail("cannot create graphics context")
+    }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    context.imageInterpolation = .high
+    NSColor.clear.setFill()
+    NSRect(x: 0, y: 0, width: size, height: size).fill()
+    source.draw(in: NSRect(x: 0, y: 0, width: size, height: size),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1)
+    context.flushGraphics()
+    NSGraphicsContext.restoreGraphicsState()
+    guard let data = rep.representation(using: .png, properties: [:]) else {
+        fail("cannot encode \(size)x\(size) PNG")
+    }
+    return data
 }
 
-// Small connection indicator.
-ctx.setFillColor(color(0x35D07F))
-ctx.fillEllipse(in: CGRect(x: 770, y: 292, width: 34, height: 34))
-ctx.setStrokeColor(color(0x0A1B2C))
-ctx.setLineWidth(6)
-ctx.strokeEllipse(in: CGRect(x: 770, y: 292, width: 34, height: 34))
+try? FileManager.default.removeItem(at: iconsetURL)
+try FileManager.default.createDirectory(at: iconsetURL, withIntermediateDirectories: true)
 
-image.unlockFocus()
+let sizes: [(Int, String)] = [
+    (16, "icon_16x16.png"),
+    (32, "icon_16x16@2x.png"),
+    (32, "icon_32x32.png"),
+    (64, "icon_32x32@2x.png"),
+    (128, "icon_128x128.png"),
+    (256, "icon_128x128@2x.png"),
+    (256, "icon_256x256.png"),
+    (512, "icon_256x256@2x.png"),
+    (512, "icon_512x512.png"),
+    (1024, "icon_512x512@2x.png")
+]
 
-guard let tiff = image.tiffRepresentation,
-      let rep = NSBitmapImageRep(data: tiff),
-      let png = rep.representation(using: .png, properties: [:]) else {
-    fatalError("PNG encoding failed")
+for (size, name) in sizes {
+    try renderPNG(size: size).write(to: iconsetURL.appendingPathComponent(name), options: .atomic)
 }
-let output = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon_1024.png"
-try png.write(to: URL(fileURLWithPath: output))
-print("wrote \(output)")
+try renderPNG(size: 1024).write(to: masterURL, options: .atomic)
+
+let iconutil = Process()
+iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
+iconutil.arguments = ["-c", "icns", iconsetURL.path, "-o", icnsURL.path]
+try iconutil.run()
+iconutil.waitUntilExit()
+guard iconutil.terminationStatus == 0 else {
+    fail("iconutil failed with status \(iconutil.terminationStatus)")
+}
+
+print("wrote \(masterURL.path)")
+print("wrote \(iconsetURL.path)")
+print("wrote \(icnsURL.path)")

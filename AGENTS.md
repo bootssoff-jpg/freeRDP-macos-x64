@@ -12,20 +12,40 @@ diagnostics: every visible control must perform a real action or be disabled.
 ## Build and test
 
 ```bash
-make app     # fetch/build FreeRDP 3.32.2 and produce build/RDP Mac.app
-make test    # ObjC unit/protocol/lifecycle tests
+make app     # build OpenSSL, FreeRDP 3.32.2 and build/RDP Mac.app
+make test    # ObjC unit/protocol/lifecycle and Swift session tests
+make dist    # ZIP + DMG + SHA256SUMS after signing
 make clean   # remove build/ only
-make clean-vendor  # also remove downloaded/built FreeRDP
+make clean-vendor  # also remove downloaded/built FreeRDP and OpenSSL
 ```
 
-Requirements: macOS 12+ Intel, Command Line Tools, CMake, Homebrew
-`openssl@3`. The app bundle embeds OpenSSL; it must not depend on Homebrew at
-runtime. Verify with:
+Requirements: macOS 12+ Intel, Command Line Tools, Swift 6.x, CMake 3.21+,
+Git and network. OpenSSL 3.6.4 is built from a pinned source tarball by
+`scripts/build_openssl.sh`; Homebrew OpenSSL is not used. The app bundle embeds
+OpenSSL; it must not depend on Homebrew at runtime. Verify with:
 
 ```bash
 otool -L "build/RDP Mac.app/Contents/MacOS/RDPMac"   # only @rpath/system libs
 "build/RDP Mac.app/Contents/MacOS/RDPMac" --selftest
 ```
+
+## Approved application icon
+
+The user approved `Resources/Branding/rdpmac-icon-arrows-v2.png`: two opposing
+blue/turquoise arrows on a dark rounded square. Use this asset for the next
+application build and release, and for README/release branding. The earlier
+`rdpmac-icon-concept-v1.png` is an unselected concept. A vector redraw is at
+`Resources/Branding/rdpmac-icon-arrows-v2.svg`.
+
+Generate the complete macOS iconset and `Resources/RDPMac.icns` from the
+approved PNG with `swift scripts/make_icon.swift`, preserving transparency and
+aspect ratio. The script downsamples the 1254 px master to a 1024 px release
+master and never restores the old monitor/clipboard drawing. The app bundle
+must include the generated `RDPMac.icns` and reference it through Info.plist.
+Do not substitute the FreeRDP logo: its code is Apache-2.0, but §6 excludes
+trademark/logo rights and no separate logo permission is published. Do not
+redesign the approved icon without a new user request. The generation prompt is
+stored beside the approved PNG.
 
 ## Architecture
 
@@ -34,6 +54,10 @@ otool -L "build/RDP Mac.app/Contents/MacOS/RDPMac"   # only @rpath/system libs
 - `Sources/Bridge/RDPMacClipboard.m` — CLIPRDR controller: capabilities,
   Format List/Data, echo suppression, timeout, diagnostics.
 - `Sources/Bridge/RDPMacClipboardText.m` — CF_UNICODETEXT/CF_TEXT codec.
+- `AppDelegate` owns all session controllers; commands target the selected
+  session. `ConnectionsWindowController` lists shared saved profiles by group.
+- Only the foreground session may synchronize the shared macOS pasteboard;
+  background requests and late responses must not expose or replace it.
 - `Sources/App/*.swift` — AppKit UI; main-thread only. `MainWindowController`
   owns the client and implements `RDPMacClientDelegate`.
 - FreeRDP is statically linked; `libssl.3`/`libcrypto.3` are bundled and
@@ -58,9 +82,10 @@ otool -L "build/RDP Mac.app/Contents/MacOS/RDPMac"   # only @rpath/system libs
 ## FreeRDP/CMake pitfalls
 
 - On Intel Homebrew, `/usr/local/include/openssl` can point to OpenSSL 4 and
-  shadow `-isystem <openssl@3>`. Build scripts pass
-  `-I$(brew --prefix openssl@3)/include` and fail if FreeRDP references
-  OpenSSL 4-only symbols such as `OPENSSL_sk_set_cmp_thunks`.
+  shadow headers. Build scripts use the project-local
+  `vendor/openssl-install/include` and fail if FreeRDP references OpenSSL
+  4-only symbols such as `OPENSSL_sk_set_cmp_thunks`. They also reject bundled
+  dylibs with `minos` newer than 12.0.
 - rdpdr is not built. Disable `DeviceRedirection`, `Redirect*` and RDP8 features
   that implicitly require rdpdr (`NetworkAutoDetect`, `SupportHeartbeatPdu`,
   `SupportMultitransport`), otherwise pre-connect fails.
@@ -74,5 +99,5 @@ otool -L "build/RDP Mac.app/Contents/MacOS/RDPMac"   # only @rpath/system libs
 
 Automated tests cannot replace a live Windows session. When changing clipboard
 or connection logic, run `make test` and update the manual checklist in
-`README.md` if behavior changes. Do not claim a real RDP/Windows test was
+`docs/testing.md` if behavior changes. Do not claim a real RDP/Windows test was
 performed unless it actually was.

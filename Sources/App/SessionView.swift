@@ -169,6 +169,9 @@ final class SessionView: NSView {
         } else if !diagnostics.monitorReady {
             text = "Буфер: согласование"
             color = .systemOrange
+        } else if diagnostics.stateDescription.contains("приостановлен") {
+            text = "Буфер: сессия не активна"
+            color = .secondaryLabelColor
         } else if diagnostics.failureCount > 0 && diagnostics.lastError != nil {
             text = "Буфер: готов, были ошибки"
             color = .systemOrange

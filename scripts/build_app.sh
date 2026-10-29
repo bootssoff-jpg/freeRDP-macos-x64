@@ -25,12 +25,10 @@ fail() {
 [ -f "$FREERDP/include/freerdp3/freerdp/freerdp.h" ] ||
     fail "FreeRDP headers are missing. Run scripts/build_freerdp.sh first."
 
-if command -v brew >/dev/null 2>&1; then
-    OPENSSL_PREFIX="$(brew --prefix openssl@3 2>/dev/null || true)"
-fi
-OPENSSL_PREFIX="${OPENSSL_PREFIX:-/usr/local/opt/openssl@3}"
+"$ROOT/scripts/build_openssl.sh"
+OPENSSL_PREFIX="$ROOT/vendor/openssl-install"
 [ -f "$OPENSSL_PREFIX/lib/libssl.3.dylib" ] ||
-    fail "OpenSSL 3 dylibs not found at $OPENSSL_PREFIX (brew install openssl@3)"
+    fail "OpenSSL 3 dylibs not found at $OPENSSL_PREFIX"
 
 SDK="$(xcrun --show-sdk-path)"
 [ "$(uname -m)" = "x86_64" ] || echo "WARNING: building x86_64 on $(uname -m)"
@@ -84,6 +82,10 @@ swiftc \
 [ -f "$ROOT/Resources/RDPMac.icns" ] || fail "Resources/RDPMac.icns is missing"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/RDPMac.icns" "$APP/Contents/Resources/RDPMac.icns"
+mkdir -p "$APP/Contents/Resources/Licenses"
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/Licenses/LICENSE-RDPMac.txt"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/Licenses/THIRD_PARTY_NOTICES.md"
+cp "$ROOT"/LICENSES/*.txt "$APP/Contents/Resources/Licenses/"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" \
     "$APP/Contents/Info.plist" >/dev/null
 
@@ -131,13 +133,22 @@ lipo -info "$BIN" | grep -q x86_64 || fail "binary is not x86_64"
 [ "$(file -b "$BIN" | cut -d' ' -f1-4)" = "Mach-O 64-bit executable x86_64" ] ||
     echo "WARNING: unexpected file type: $(file -b "$BIN")"
 
+# The executable and every bundled dylib must honour the same deployment
+# target. In particular, Homebrew OpenSSL bottles currently carry minos 15.0.
+for macho in "$BIN" "$APP/Contents/Frameworks/"*.dylib; do
+    minos="$(otool -l "$macho" | awk '/LC_BUILD_VERSION/{found=1} found && /minos/{print $2; exit}')"
+    [ -n "$minos" ] || fail "cannot determine minimum macOS for $macho"
+    [ "$(printf '%s\n' "$MIN_MACOS" "$minos" | sort -V | head -1)" = "$MIN_MACOS" ] ||
+        fail "$macho requires macOS $minos, expected <= $MIN_MACOS"
+done
+
 echo "Running bundled self-test..."
 "$BIN" --selftest
 
 echo "Creating unsigned distribution archive..."
 ARCHIVE="$DIST/RDP-Mac-$VERSION-x86_64-unsigned.zip"
 rm -f "$ARCHIVE"
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$ARCHIVE"
+ditto -c -k --norsrc --noextattr --noqtn --keepParent "$APP" "$ARCHIVE"
 
 echo
 echo "Built: $APP"

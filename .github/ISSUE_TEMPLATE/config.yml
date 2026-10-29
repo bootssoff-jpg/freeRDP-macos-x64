@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/bootssoff-jpg/freeRDP-macos-x64/security/advisories/new
+    about: Report security issues privately, never in a public issue.
+  - name: FreeRDP project
+    url: https://github.com/FreeRDP/FreeRDP
+    about: Upstream FreeRDP issues and documentation.

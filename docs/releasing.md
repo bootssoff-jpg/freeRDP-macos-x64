@@ -89,3 +89,12 @@ Include the SHA-256 values from the actual `SHA256SUMS`, not placeholders.
 
 Do not change repository visibility, create a tag, push, or upload assets
 without explicit instruction from the repository owner.
+
+## Privacy of build artifacts
+
+Release builds remap source paths to `/rdpmac` and strip debug/object-path
+metadata before signing. Both build and packaging reject a Mach-O containing
+an absolute `/Users/` path. Do not package local profiles, known-host files,
+logs, credentials or screenshots of real accounts/servers. Documentation uses
+reserved `.invalid` hosts and demo accounts only. FreeRDP may contain its own
+upstream network-address examples; these are not local connection profiles.

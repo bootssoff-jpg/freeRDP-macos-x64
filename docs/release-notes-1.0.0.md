@@ -65,8 +65,8 @@ The SHA-256 values below belong to the prepared unsigned build and match
 generated with the final artifacts.
 
 ```text
-bf738b5ff06e81a473701a0721c5456b42b7997ac7359aa56a9cbf741b977598  RDP-Mac-1.0.0-x86_64-unsigned.zip
-a1eb5ffb0170b25349f0d1577aab8a1741969cc852a0ba51903a69a31088bde8  RDP-Mac-1.0.0-x86_64-unsigned.dmg
+75bc24ebb0e7e5af960bb104cc2131e95a43877d1aff4ef4350ce8fe40869df3  RDP-Mac-1.0.0-x86_64-unsigned.zip
+4d906adb6f7f9d67f0d41cef7bec098522e3f53d4dcd3e619e453a932145642a  RDP-Mac-1.0.0-x86_64-unsigned.dmg
 ```
 
 ## License and trademarks

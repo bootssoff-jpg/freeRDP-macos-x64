@@ -79,6 +79,9 @@ for library in "$APP/Contents/Frameworks/"*.dylib; do
 done
 
 for macho in "$BIN" "$APP/Contents/Frameworks/"*.dylib; do
+    if LC_ALL=C grep -aq '/Users/' "$macho"; then
+        fail "a build-account path is embedded in $(basename "$macho")"
+    fi
     minos="$(otool -l "$macho" | awk '/LC_BUILD_VERSION/{found=1} found && /minos/{print $2; exit}')"
     [ -n "$minos" ] || fail "cannot determine minimum macOS for $macho"
     [ "$(printf '%s\n' "$MIN_MACOS" "$minos" | sort -V | head -1)" = "$MIN_MACOS" ] ||

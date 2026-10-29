@@ -42,7 +42,8 @@ CFLAGS=(
     -fobjc-runtime=macosx-12.0
     -fblocks
     -O2
-    -g
+    "-ffile-prefix-map=$ROOT=/rdpmac"
+    "-fdebug-prefix-map=$ROOT=/rdpmac"
     -mmacosx-version-min="$MIN_MACOS"
     -Wall
     -Wno-deprecated-declarations
@@ -65,6 +66,8 @@ swiftc \
     -module-cache-path "$BUILD/module-cache" \
     -O \
     -whole-module-optimization \
+    -file-prefix-map "$ROOT=/rdpmac" \
+    -debug-prefix-map "$ROOT=/rdpmac" \
     -target "x86_64-apple-macos$MIN_MACOS" \
     -sdk "$SDK" \
     -import-objc-header "$ROOT/Sources/App/RDPMac-Bridging-Header.h" \
@@ -126,6 +129,14 @@ if otool -L "$APP/Contents/Frameworks/libssl.3.dylib" | grep -E '/usr/local|/opt
     otool -L "$APP/Contents/Frameworks/libssl.3.dylib" >&2
     fail "libssl references are not relocatable"
 fi
+
+# Remove object/debug paths before signing or creating any archive.
+strip -S "$BIN"
+for macho in "$BIN" "$APP/Contents/Frameworks/"*.dylib; do
+    if LC_ALL=C grep -aq '/Users/' "$macho"; then
+        fail "a build-account path is embedded in $(basename "$macho")"
+    fi
+done
 
 echo "Signing (ad-hoc, local development only)..."
 codesign --force --deep --sign - "$APP" >/dev/null

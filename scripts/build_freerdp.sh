@@ -58,7 +58,14 @@ OPENSSL_BUILD_PREFIX="$OPENSSL_LINK/prefix"
 if [ ! -d "$SRC/.git" ]; then
     rm -rf "$SRC"
     echo "Fetching FreeRDP $PINNED_TAG..."
-    git clone --depth 1 --branch "$PINNED_TAG" https://github.com/FreeRDP/FreeRDP.git "$SRC"
+    for attempt in 1 2 3; do
+        if git clone --depth 1 --branch "$PINNED_TAG" https://github.com/FreeRDP/FreeRDP.git "$SRC"; then
+            break
+        fi
+        [ "$attempt" -lt 3 ] || fail "FreeRDP download failed after 3 attempts"
+        rm -rf "$SRC"
+        sleep "$((attempt * 2))"
+    done
 fi
 
 ACTUAL_COMMIT="$(git -C "$SRC" rev-parse HEAD)"

@@ -16,7 +16,7 @@
     if (self) {
         _localFormats = @[];
         _remoteFormats = @[];
-        _stateDescription = @"не подключено";
+        _stateDescription = RDPMacLocalizedString(@"не подключено");
     }
     return self;
 }

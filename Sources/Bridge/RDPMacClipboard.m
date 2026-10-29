@@ -43,6 +43,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     BOOL _invalidated;
     BOOL _synchronizationActive;
     BOOL _discardPendingResponse;
+    BOOL _requestTimedOut;
     uint32_t _queuedRemoteFormat;
 }
 
@@ -87,7 +88,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
 - (void)startPolling
 {
-    if (_pollTimer || !_enabled)
+    if (_pollTimer || !_enabled || !_synchronizationActive)
         return;
     __weak typeof(self) weakSelf = self;
     _pollTimer = [NSTimer scheduledTimerWithTimeInterval:RDPMacClipboardPollInterval
@@ -105,10 +106,13 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
         return;
     _synchronizationActive = active;
     if (!active) {
+        [_pollTimer invalidate];
+        _pollTimer = nil;
         if (_pending)
             _discardPendingResponse = YES;
         _queuedRemoteFormat = 0;
     } else if (_enabled && _monitorReady) {
+        [self startPolling];
         // The Mac clipboard remains authoritative on focus changes. Remote
         // text is requested only after the next server advertisement or a
         // manual request, never from an inactive session.
@@ -127,7 +131,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
         _channelConnected = YES;
         _monitorReady = NO;
     }
-    [self log:@"CLIPRDR: канал буфера обмена подключён" level:0];
+    [self log:RDPMacLocalizedString(@"CLIPRDR: канал буфера обмена подключён") level:0];
     [self notify];
 }
 
@@ -147,7 +151,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     const BOOL wasConnected = _channelConnected;
     [self invalidateChannel];
     if (wasConnected)
-        [self log:@"CLIPRDR: канал буфера обмена отключён" level:1];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: канал буфера обмена отключён") level:1];
     [_requestTimer invalidate];
     _requestTimer = nil;
     [_pollTimer invalidate];
@@ -165,6 +169,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     _pending = NO;
     _pendingFormat = 0;
     _pendingGeneration = 0;
+    _requestTimedOut = NO;
     _discardPendingResponse = NO;
     _queuedRemoteFormat = 0;
     _remoteFormatIds = @[];
@@ -221,7 +226,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     }
     if (rc != CHANNEL_RC_OK) {
         _failureCount++;
-        _lastError = [NSString stringWithFormat:@"не удалось отправить CLIPRDR capabilities (0x%08X)",
+        _lastError = [NSString stringWithFormat:RDPMacLocalizedString(@"не удалось отправить CLIPRDR capabilities (0x%08X)"),
                                                 rc];
         [self log:_lastError level:2];
         [self notify];
@@ -233,22 +238,22 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 - (void)handleMonitorReady
 {
     _monitorReady = YES;
-    [self log:@"CLIPRDR: получен Monitor Ready, согласование форматов" level:0];
+    [self log:RDPMacLocalizedString(@"CLIPRDR: получен Monitor Ready, согласование форматов") level:0];
 
     if (_enabled) {
         [self sendCapabilities];
         [self startPolling];
         [self sendLocalClipboard];
     } else {
-        [self log:@"CLIPRDR: канал доступен, но обмен отключён в настройках" level:1];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: канал доступен, но обмен отключён в настройках") level:1];
     }
     [self notify];
 }
 
 - (void)handleServerCapabilitiesGeneralFlags:(uint32_t)flags version:(uint32_t)version
 {
-    _capabilitiesText = [NSString stringWithFormat:@"версия %u, generalFlags 0x%08X", version, flags];
-    [self log:[NSString stringWithFormat:@"CLIPRDR: возможности сервера — %@", _capabilitiesText]
+    _capabilitiesText = [NSString stringWithFormat:RDPMacLocalizedString(@"версия %u, generalFlags 0x%08X"), version, flags];
+    [self log:[NSString stringWithFormat:RDPMacLocalizedString(@"CLIPRDR: возможности сервера — %@"), _capabilitiesText]
          level:0];
     [self notify];
 }
@@ -275,7 +280,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     }
     if (rc != CHANNEL_RC_OK) {
         _failureCount++;
-        _lastError = [NSString stringWithFormat:@"не удалось отправить список форматов (0x%08X)", rc];
+        _lastError = [NSString stringWithFormat:RDPMacLocalizedString(@"не удалось отправить список форматов (0x%08X)"), rc];
         [self log:_lastError level:2];
         [self notify];
         return NO;
@@ -291,24 +296,24 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 - (void)sendLocalClipboard
 {
     if (!_enabled) {
-        [self log:@"CLIPRDR: отправка отключена в настройках" level:1];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: отправка отключена в настройках") level:1];
         return;
     }
     if (!_synchronizationActive || !_monitorReady || !_cliprdr) {
-        [self log:@"CLIPRDR: канал ещё не готов" level:1];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: канал ещё не готов") level:1];
         return;
     }
 
     NSString *text = [_pasteboard stringForType:NSPasteboardTypeString];
     if (text.length == 0) {
-        [self log:@"CLIPRDR: в буфере macOS нет текста для отправки" level:1];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: в буфере macOS нет текста для отправки") level:1];
         [self notify];
         return;
     }
 
     _lastLocalText = text;
     if ([self sendLocalFormatListAndCount:YES]) {
-        [self log:[NSString stringWithFormat:@"CLIPRDR: Mac → Windows объявлен текст (%lu символов)",
+        [self log:[NSString stringWithFormat:RDPMacLocalizedString(@"CLIPRDR: Mac → Windows объявлен текст (%lu символов)"),
                                              (unsigned long)text.length]
              level:0];
     }
@@ -333,10 +338,10 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     if (!sent)
         return;
     if (_lastError.length == 0) {
-        _lastError = [NSString stringWithFormat:@"Windows запросил неподдерживаемый формат %@",
+        _lastError = [NSString stringWithFormat:RDPMacLocalizedString(@"Windows запросил неподдерживаемый формат %@"),
                                                 RDPMacClipboardFormatName(formatId)];
     }
-    [self log:[NSString stringWithFormat:@"CLIPRDR: %@, отправлен отказ (rc=0x%08X)", _lastError, rc]
+    [self log:[NSString stringWithFormat:RDPMacLocalizedString(@"CLIPRDR: %@, отправлен отказ (rc=0x%08X)"), _lastError, rc]
          level:1];
     [self notify];
 }
@@ -345,14 +350,14 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 {
     if (!_enabled || !_synchronizationActive) {
         _failureCount++;
-        _lastError = @"буфер обмена отключён в настройках профиля";
+        _lastError = RDPMacLocalizedString(@"буфер обмена отключён в настройках профиля");
         [self sendFailResponseForFormat:formatId];
         return;
     }
 
     if (formatId != RDPMacClipboardFormatUnicodeText && formatId != RDPMacClipboardFormatText) {
         _failureCount++;
-        _lastError = [NSString stringWithFormat:@"Windows запросил неподдерживаемый формат %@",
+        _lastError = [NSString stringWithFormat:RDPMacLocalizedString(@"Windows запросил неподдерживаемый формат %@"),
                                                 RDPMacClipboardFormatName(formatId)];
         [self sendFailResponseForFormat:formatId];
         return;
@@ -361,7 +366,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     NSString *text = [_pasteboard stringForType:NSPasteboardTypeString];
     if (text.length == 0) {
         _failureCount++;
-        _lastError = @"Windows запросил данные, но в буфере macOS нет текста";
+        _lastError = RDPMacLocalizedString(@"Windows запросил данные, но в буфере macOS нет текста");
         [self log:_lastError level:1];
         [self sendFailResponseForFormat:formatId];
         return;
@@ -369,7 +374,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
     if (text.length > RDPMacClipboardMaxTextBytes / 2) {
         _failureCount++;
-        _lastError = @"текст превышает безопасный размер для буфера обмена";
+        _lastError = RDPMacLocalizedString(@"текст превышает безопасный размер для буфера обмена");
         [self log:_lastError level:2];
         [self sendFailResponseForFormat:formatId];
         return;
@@ -379,14 +384,14 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     NSData *payload = RDPMacClipboardEncodeText(text, formatId, &error);
     if (!payload) {
         _failureCount++;
-        _lastError = error.localizedDescription ?: @"не удалось закодировать текст";
+        _lastError = error.localizedDescription ?: RDPMacLocalizedString(@"не удалось закодировать текст");
         [self log:_lastError level:2];
         [self sendFailResponseForFormat:formatId];
         return;
     }
     if (payload.length > RDPMacClipboardMaxTextBytes) {
         _failureCount++;
-        _lastError = @"текст превышает безопасный размер для буфера обмена";
+        _lastError = RDPMacLocalizedString(@"текст превышает безопасный размер для буфера обмена");
         [self log:_lastError level:2];
         [self sendFailResponseForFormat:formatId];
         return;
@@ -405,17 +410,17 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     }
     if (rc == CHANNEL_RC_OK) {
         _sendCount++;
-        _lastLocalSend = [NSString stringWithFormat:@"%@, %@, %lu байт", [self now],
+        _lastLocalSend = [NSString stringWithFormat:RDPMacLocalizedString(@"%@, %@, %lu байт"), [self now],
                                                     RDPMacClipboardFormatName(formatId),
                                                     (unsigned long)payload.length];
         _lastLocalText = text;
-        [self log:[NSString stringWithFormat:@"CLIPRDR: Mac → Windows отправлено %lu символов (%@)",
+        [self log:[NSString stringWithFormat:RDPMacLocalizedString(@"CLIPRDR: Mac → Windows отправлено %lu символов (%@)"),
                                              (unsigned long)text.length,
                                              RDPMacClipboardFormatName(formatId)]
              level:0];
     } else {
         _failureCount++;
-        _lastError = [NSString stringWithFormat:@"ошибка отправки данных (0x%08X)", rc];
+        _lastError = [NSString stringWithFormat:RDPMacLocalizedString(@"ошибка отправки данных (0x%08X)"), rc];
         [self log:_lastError level:2];
     }
     [self notify];
@@ -440,7 +445,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     _lastRemoteAdvertise =
         [NSString stringWithFormat:@"%@, %@", [self now],
                                    names.count ? [names componentsJoinedByString:@", "] : @"—"];
-    [self log:[NSString stringWithFormat:@"CLIPRDR: Windows → Mac список форматов: %@",
+    [self log:[NSString stringWithFormat:RDPMacLocalizedString(@"CLIPRDR: Windows → Mac список форматов: %@"),
                                          _lastRemoteAdvertise]
          level:0];
     // The peer expects an acknowledgement for its format list even if none of
@@ -455,7 +460,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     BOOL hasUnicode = [ids containsObject:@(RDPMacClipboardFormatUnicodeText)];
     BOOL hasAnsi = [ids containsObject:@(RDPMacClipboardFormatText)];
     if (!hasUnicode && !hasAnsi) {
-        [self log:@"CLIPRDR: в буфере Windows нет текста (изображения/файлы пока не поддерживаются)"
+        [self log:RDPMacLocalizedString(@"CLIPRDR: в буфере Windows нет текста (изображения/файлы пока не поддерживаются)")
              level:0];
         [self notify];
         return;
@@ -469,16 +474,16 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 - (void)handleServerFormatListResponseFlags:(uint16_t)flags
 {
     if (flags & CB_RESPONSE_FAIL)
-        [self log:@"CLIPRDR: Windows отклонил список форматов Mac" level:1];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: Windows отклонил список форматов Mac") level:1];
     else
-        [self log:@"CLIPRDR: Windows подтвердил список форматов Mac" level:0];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: Windows подтвердил список форматов Mac") level:0];
     [self notify];
 }
 
 - (void)requestRemoteFormat:(uint32_t)formatId
 {
     if (!_enabled || !_synchronizationActive || !_monitorReady) {
-        [self log:@"CLIPRDR: канал не готов для запроса данных" level:1];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: канал не готов для запроса данных") level:1];
         return;
     }
 
@@ -494,6 +499,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     request.requestedFormatId = formatId;
 
     _pending = YES;
+    _requestTimedOut = NO;
     _pendingFormat = formatId;
     _pendingGeneration++;
 
@@ -508,7 +514,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     if (rc != CHANNEL_RC_OK) {
         _pending = NO;
         _failureCount++;
-        _lastError = [NSString stringWithFormat:@"не удалось запросить данные (0x%08X)", rc];
+        _lastError = [NSString stringWithFormat:RDPMacLocalizedString(@"не удалось запросить данные (0x%08X)"), rc];
         [self log:_lastError level:2];
         [self notify];
         return;
@@ -523,7 +529,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
                                                       }];
     [[NSRunLoop mainRunLoop] addTimer:_requestTimer forMode:NSRunLoopCommonModes];
 
-    [self log:[NSString stringWithFormat:@"CLIPRDR: у Windows запрошен %@",
+    [self log:[NSString stringWithFormat:RDPMacLocalizedString(@"CLIPRDR: у Windows запрошен %@"),
                                          RDPMacClipboardFormatName(formatId)]
          level:0];
     [self notify];
@@ -537,8 +543,9 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     // until its reply arrives, otherwise a late reply could satisfy a newer
     // request with the wrong format. It must never update the pasteboard.
     _discardPendingResponse = YES;
+    _requestTimedOut = YES;
     _failureCount++;
-    _lastError = [NSString stringWithFormat:@"тайм-аут ожидания буфера обмена (%.0f с)",
+    _lastError = [NSString stringWithFormat:RDPMacLocalizedString(@"тайм-аут ожидания буфера обмена (%.0f с)"),
                                             RDPMacClipboardRequestTimeout];
     [self log:[NSString stringWithFormat:@"CLIPRDR: %@", _lastError] level:2];
     [self notify];
@@ -553,10 +560,10 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
         _lastChangeCount = _suppressChangeCount;
         _lastLocalText = text;
         _receiveCount++;
-        _lastRemoteReceive = [NSString stringWithFormat:@"%@, %@, %lu байт (без изменений)", [self now],
+        _lastRemoteReceive = [NSString stringWithFormat:RDPMacLocalizedString(@"%@, %@, %lu байт (без изменений)"), [self now],
                                                         RDPMacClipboardFormatName(formatId),
                                                         (unsigned long)byteLength];
-        [self log:@"CLIPRDR: текст Windows уже совпадает с буфером macOS" level:0];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: текст Windows уже совпадает с буфером macOS") level:0];
         [self notify];
         return;
     }
@@ -565,7 +572,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     const BOOL ok = [_pasteboard setString:text forType:NSPasteboardTypeString];
     if (!ok) {
         _failureCount++;
-        _lastError = @"не удалось записать текст в буфер обмена macOS";
+        _lastError = RDPMacLocalizedString(@"не удалось записать текст в буфер обмена macOS");
         [self log:_lastError level:2];
         [self notify];
         return;
@@ -576,11 +583,10 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     _lastChangeCount = _suppressChangeCount;
     _lastLocalText = text;
     _receiveCount++;
-    _lastRemoteReceive = [NSString stringWithFormat:@"%@, %@, %lu байт", [self now],
+    _lastRemoteReceive = [NSString stringWithFormat:RDPMacLocalizedString(@"%@, %@, %lu байт"), [self now],
                                                     RDPMacClipboardFormatName(formatId),
                                                     (unsigned long)byteLength];
-    [self log:[NSString stringWithFormat:@"CLIPRDR: Windows → Mac получено %lu символов "
-                                         "(содержимое в журнал не пишется)",
+    [self log:[NSString stringWithFormat:RDPMacLocalizedString(@"CLIPRDR: Windows → Mac получено %lu символов (содержимое в журнал не пишется)"),
                                          (unsigned long)text.length]
          level:0];
     [self notify];
@@ -593,6 +599,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     const uint32_t format = _pendingFormat;
     const BOOL discard = _discardPendingResponse || !_synchronizationActive;
     _pending = NO;
+    _requestTimedOut = NO;
     _discardPendingResponse = NO;
     [_requestTimer invalidate];
     _requestTimer = nil;
@@ -603,12 +610,14 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
         [self requestRemoteFormat:queuedFormat];
         return;
     }
-    if (!_enabled || discard)
+    if (!_enabled || discard) {
+        [self notify];
         return;
+    }
 
     if (flags & CB_RESPONSE_FAIL) {
         _failureCount++;
-        _lastError = @"Windows не смог предоставить текст буфера обмена";
+        _lastError = RDPMacLocalizedString(@"Windows не смог предоставить текст буфера обмена");
         [self log:[NSString stringWithFormat:@"CLIPRDR: %@", _lastError] level:1];
         [self notify];
         return;
@@ -616,7 +625,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
     if (data.length == 0) {
         _failureCount++;
-        _lastError = @"Windows вернул пустые данные буфера обмена";
+        _lastError = RDPMacLocalizedString(@"Windows вернул пустые данные буфера обмена");
         [self log:_lastError level:1];
         [self notify];
         return;
@@ -624,7 +633,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
     if (data.length > RDPMacClipboardMaxTextBytes) {
         _failureCount++;
-        _lastError = @"ответ Windows превышает безопасный размер буфера обмена";
+        _lastError = RDPMacLocalizedString(@"ответ Windows превышает безопасный размер буфера обмена");
         [self log:_lastError level:2];
         [self notify];
         return;
@@ -633,7 +642,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     NSString *text = RDPMacClipboardDecodeText(data, format);
     if (!text) {
         _failureCount++;
-        _lastError = @"не удалось декодировать текст из буфера Windows";
+        _lastError = RDPMacLocalizedString(@"не удалось декодировать текст из буфера Windows");
         [self log:_lastError level:2];
         [self notify];
         return;
@@ -642,9 +651,9 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     // Do not echo our own content back: some servers request client data and
     // then advertise the very same text back to the client.
     if (_lastLocalText && [text isEqualToString:_lastLocalText]) {
-        [self log:@"CLIPRDR: эхо собственного текста проигнорировано" level:0];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: эхо собственного текста проигнорировано") level:0];
         _receiveCount++;
-        _lastRemoteReceive = [NSString stringWithFormat:@"%@, %@, %lu байт (эхо)", [self now],
+        _lastRemoteReceive = [NSString stringWithFormat:RDPMacLocalizedString(@"%@, %@, %lu байт (эхо)"), [self now],
                                                         RDPMacClipboardFormatName(format),
                                                         (unsigned long)data.length];
         [self notify];
@@ -671,7 +680,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
     NSString *text = [_pasteboard stringForType:NSPasteboardTypeString];
     if (text.length == 0) {
-        [self log:@"CLIPRDR: локальный буфер изменился, но текста в нём нет" level:0];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: локальный буфер изменился, но текста в нём нет") level:0];
         return;
     }
     if (_lastLocalText && [text isEqualToString:_lastLocalText])
@@ -679,8 +688,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
     _lastLocalText = text;
     if ([self sendLocalFormatListAndCount:YES]) {
-        [self log:[NSString stringWithFormat:@"CLIPRDR: Mac → Windows локальный буфер изменился "
-                                             "(%lu символов)",
+        [self log:[NSString stringWithFormat:RDPMacLocalizedString(@"CLIPRDR: Mac → Windows локальный буфер изменился (%lu символов)"),
                                              (unsigned long)text.length]
              level:0];
         [self notify];
@@ -690,11 +698,11 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 - (void)requestRemoteClipboard
 {
     if (!_enabled) {
-        [self log:@"CLIPRDR: обмен отключён в настройках" level:1];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: обмен отключён в настройках") level:1];
         return;
     }
     if (!_synchronizationActive || !_monitorReady || !_cliprdr) {
-        [self log:@"CLIPRDR: канал ещё не готов для запроса из Windows" level:1];
+        [self log:RDPMacLocalizedString(@"CLIPRDR: канал ещё не готов для запроса из Windows") level:1];
         [self notify];
         return;
     }
@@ -705,7 +713,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
             if ([_remoteFormatIds containsObject:@(RDPMacClipboardFormatText)])
                 format = RDPMacClipboardFormatText;
             else {
-                [self log:@"CLIPRDR: в текущем буфере Windows нет текстового формата" level:1];
+                [self log:RDPMacLocalizedString(@"CLIPRDR: в текущем буфере Windows нет текстового формата") level:1];
                 [self notify];
                 return;
             }
@@ -717,7 +725,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 
 - (void)resync
 {
-    [self log:@"CLIPRDR: ручная ресинхронизация буфера обмена" level:0];
+    [self log:RDPMacLocalizedString(@"CLIPRDR: ручная ресинхронизация буфера обмена") level:0];
     [self sendLocalClipboard];
     [self requestRemoteClipboard];
 }
@@ -730,25 +738,28 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
 - (NSString *)stateDescription
 {
     if (!_enabled)
-        return @"обмен отключён в настройках";
+        return RDPMacLocalizedString(@"обмен отключён в настройках");
+    if (_pending && _requestTimedOut)
+        return RDPMacLocalizedString(@"Сервер не отвечает. Переподключите сессию для восстановления буфера.");
     if (!_channelConnected)
-        return @"канал не подключён";
+        return RDPMacLocalizedString(@"канал не подключён");
     if (!_synchronizationActive)
-        return @"приостановлен: сессия не активна";
+        return RDPMacLocalizedString(@"приостановлен: сессия не активна");
     if (!_monitorReady)
-        return @"ожидание Monitor Ready";
+        return RDPMacLocalizedString(@"ожидание Monitor Ready");
     if (_pending)
-        return [NSString stringWithFormat:@"ожидание данных (%@)",
+        return [NSString stringWithFormat:RDPMacLocalizedString(@"ожидание данных (%@)"),
                                           RDPMacClipboardFormatName(_pendingFormat)];
     if (_capabilitiesText)
-        return [NSString stringWithFormat:@"готов; сервер: %@", _capabilitiesText];
-    return @"готов";
+        return [NSString stringWithFormat:RDPMacLocalizedString(@"готов; сервер: %@"), _capabilitiesText];
+    return RDPMacLocalizedString(@"готов");
 }
 
 - (RDPMacClipboardDiagnostics *)diagnostics
 {
     RDPMacClipboardDiagnostics *d = [[RDPMacClipboardDiagnostics alloc] init];
     d.enabled = _enabled;
+    d.requiresReconnect = _pending && _requestTimedOut;
     d.channelConnected = _channelConnected;
     d.monitorReady = _monitorReady;
     d.localFormats = _enabled ? @[ @"CF_UNICODETEXT" ] : @[];
@@ -758,7 +769,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
     d.lastLocalSend = _lastLocalSend;
     d.lastRemoteReceive = _lastRemoteReceive;
     d.pendingRequest = _pending
-        ? [NSString stringWithFormat:@"%@ с %@", RDPMacClipboardFormatName(_pendingFormat),
+        ? [NSString stringWithFormat:RDPMacLocalizedString(@"%@ с %@"), RDPMacClipboardFormatName(_pendingFormat),
                                      [self now]]
         : nil;
     d.localAdvertiseCount = _localAdvertiseCount;
@@ -802,7 +813,7 @@ static const NSUInteger RDPMacClipboardMaxTextBytes = 32 * 1024 * 1024;
                                                 d.lastRemoteReceive ?: @"-"]];
     [lines addObject:[NSString stringWithFormat:@"pending request: %@", d.pendingRequest ?: @"-"]];
     [lines addObject:[NSString stringWithFormat:@"last error: %@", d.lastError ?: @"-"]];
-    [lines addObject:@"Содержимое буфера обмена в отчёт не записывается."];
+    [lines addObject:RDPMacLocalizedString(@"Содержимое буфера обмена в отчёт не записывается.")];
     return [lines componentsJoinedByString:@"\n"];
 }
 

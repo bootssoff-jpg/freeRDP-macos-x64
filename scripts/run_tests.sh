@@ -10,6 +10,8 @@ BUILD="$ROOT/build/tests"
 OBJ="$BUILD/obj"
 FREERDP="$ROOT/vendor/freerdp-install"
 mkdir -p "$OBJ"
+cp -R "$ROOT/Resources/en.lproj" "$ROOT/Resources/ru.lproj" "$BUILD/"
+export RDPMAC_LANGUAGE=ru
 
 "$ROOT/scripts/build_openssl.sh"
 OPENSSL_PREFIX="$ROOT/vendor/openssl-install"
@@ -78,13 +80,14 @@ APP_SOURCES=()
 for source in "$ROOT"/Sources/App/*.swift; do
     [ "$(basename "$source")" = main.swift ] || APP_SOURCES+=("$source")
 done
-swiftc -swift-version 5 -target x86_64-apple-macos12.0 \
+swiftc -module-cache-path "$BUILD/module-cache" -swift-version 5 -target x86_64-apple-macos12.0 \
     -import-objc-header "$ROOT/Sources/App/RDPMac-Bridging-Header.h" \
     -Xcc -I"$ROOT/Sources/Bridge" \
     "${APP_SOURCES[@]}" "$BUILD/session-windows/main.swift" "$OBJ"/*.o \
     -Xlinker -rpath -Xlinker "$OPENSSL_PREFIX/lib" \
     "${SWIFT_LDFLAGS[@]}" -o "$BUILD/session_windows"
-"$BUILD/session_windows" | tail -5
+RDPMAC_LANGUAGE=ru "$BUILD/session_windows" | tail -5
+RDPMAC_LANGUAGE=en "$BUILD/session_windows" | tail -5
 
 echo "== Bundled app self-test (if built) =="
 APP_BIN="$ROOT/build/RDP Mac.app/Contents/MacOS/RDPMac"

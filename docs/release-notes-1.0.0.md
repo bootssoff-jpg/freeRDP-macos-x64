@@ -10,6 +10,11 @@ Microsoft Remote Desktop code or runtime is included.
 
 ## Highlights
 
+- English and Russian interface, system-language selection and an explicit language preference applied after relaunch.
+- Collapsible profile groups, direct profile editing and a simpler connection form.
+- Clipboard timeout recovery through explicit reconnection; background polling and log rendering improvements.
+
+
 - Independent multi-session windows, `⌘N` for a new session and `⌘0` for the
   shared connection manager.
 - Profile groups, search, multi-open and real per-profile session counts.
@@ -60,8 +65,8 @@ The SHA-256 values below belong to the prepared unsigned build and match
 generated with the final artifacts.
 
 ```text
-c4e2c3c888d175a42897b326c13a4d3872c5960c8f052df1153a53955afe0b46  RDP-Mac-1.0.0-x86_64-unsigned.zip
-de4c694b94a2370f9dd4728feaafad77493cede24eb80716d986a32a1002edeb  RDP-Mac-1.0.0-x86_64-unsigned.dmg
+bf738b5ff06e81a473701a0721c5456b42b7997ac7359aa56a9cbf741b977598  RDP-Mac-1.0.0-x86_64-unsigned.zip
+a1eb5ffb0170b25349f0d1577aab8a1741969cc852a0ba51903a69a31088bde8  RDP-Mac-1.0.0-x86_64-unsigned.dmg
 ```
 
 ## License and trademarks

@@ -8,6 +8,10 @@
 #import <AppKit/AppKit.h>
 #import "RDPMacInternal.h"
 
+@interface RDPMacClipboardController (TimeoutTest)
+- (void)requestDidTimeOut;
+@end
+
 static int gFailures = 0;
 static int gCapabilitiesCalls = 0;
 static int gFormatListCalls = 0;
@@ -229,6 +233,19 @@ int main(void)
                                             flags:CB_RESPONSE_OK];
         expectEqualStrings([pasteboard stringForType:NSPasteboardTypeString], @"Newest clipboard",
                            @"latest queued response is applied");
+
+        [controller requestRemoteClipboard];
+        [controller requestDidTimeOut];
+        expect([controller diagnostics].requiresReconnect, @"timeout exposes reconnect recovery state");
+        [controller handleServerFormatDataResponse:RDPMacClipboardEncodeText(@"late timed out reply", 13, NULL)
+                                            flags:CB_RESPONSE_OK];
+        expect(![controller diagnostics].requiresReconnect, @"late reply clears timeout without applying stale text");
+        expectEqualStrings([pasteboard stringForType:NSPasteboardTypeString], @"Newest clipboard",
+                           @"timed-out response cannot overwrite pasteboard");
+        [controller setSynchronizationActive:NO];
+        expect([controller valueForKey:@"pollTimer"] == nil, @"inactive session stops its clipboard polling timer");
+        [controller setSynchronizationActive:YES];
+        expect([controller valueForKey:@"pollTimer"] != nil, @"foreground session resumes its clipboard polling timer");
 
         [controller handleChannelDisconnected];
         expect([controller diagnostics].channelConnected == NO, @"channel disconnect updates state");

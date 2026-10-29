@@ -1,4 +1,21 @@
 #import "RDPMacClipboardText.h"
+#import "RDPMacBridge.h"
+
+NSString *RDPMacLocalizedString(NSString *key)
+{
+    static NSBundle *languageBundle;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *choice = NSProcessInfo.processInfo.environment[@"RDPMAC_LANGUAGE"]
+            ?: [NSUserDefaults.standardUserDefaults stringForKey:@"RDPMacLanguage"] ?: @"system";
+        if (![choice isEqualToString:@"en"] && ![choice isEqualToString:@"ru"])
+            choice = [NSLocale.preferredLanguages.firstObject hasPrefix:@"ru"] ? @"ru" : @"en";
+        NSString *path = [NSBundle.mainBundle pathForResource:choice ofType:@"lproj"];
+        if (path) languageBundle = [NSBundle bundleWithPath:path];
+    });
+    return languageBundle ? [languageBundle localizedStringForKey:key value:key table:nil] : key;
+}
+
 
 const uint32_t RDPMacClipboardFormatUnicodeText = 13;
 const uint32_t RDPMacClipboardFormatText = 1;
@@ -78,7 +95,7 @@ NSData *RDPMacClipboardEncodeText(NSString *text, uint32_t formatId, NSError **e
                                          code:2
                                      userInfo:@{
                                          NSLocalizedDescriptionKey :
-                                             @"Текст содержит символы, которые нельзя передать в этом формате"
+                                             RDPMacLocalizedString(@"Текст содержит символы, которые нельзя передать в этом формате")
                                      }];
         }
         return nil;
@@ -93,7 +110,7 @@ NSData *RDPMacClipboardEncodeText(NSString *text, uint32_t formatId, NSError **e
                                              code:5
                                          userInfo:@{
                                              NSLocalizedDescriptionKey :
-                                                 @"Не удалось закодировать Unicode-текст"
+                                                 RDPMacLocalizedString(@"Не удалось закодировать Unicode-текст")
                                          }];
             }
             return nil;
@@ -117,7 +134,7 @@ NSData *RDPMacClipboardEncodeText(NSString *text, uint32_t formatId, NSError **e
                                              code:3
                                          userInfo:@{
                                              NSLocalizedDescriptionKey :
-                                                 @"Не удалось закодировать текст в CF_TEXT"
+                                                 RDPMacLocalizedString(@"Не удалось закодировать текст в CF_TEXT")
                                          }];
             }
             return nil;
@@ -132,7 +149,7 @@ NSData *RDPMacClipboardEncodeText(NSString *text, uint32_t formatId, NSError **e
                                      code:4
                                  userInfo:@{
                                      NSLocalizedDescriptionKey :
-                                         @"Формат буфера обмена не поддерживается"
+                                         RDPMacLocalizedString(@"Формат буфера обмена не поддерживается")
                                  }];
     }
     return nil;

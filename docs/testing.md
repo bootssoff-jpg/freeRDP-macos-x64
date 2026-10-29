@@ -95,3 +95,19 @@ Automated tests passed on macOS 15.8.1 Intel with FreeRDP 3.32.2, OpenSSL 3.6.4
 and the bundled app. A live Windows server was not available in the development
 environment; do not claim the manual checklist passed until it has actually
 been run.
+
+## EN/RU and interface regression checklist
+
+- [ ] Launch with system language, English and Russian; check menus, forms, errors and diagnostics.
+- [ ] Select a different UI language, keep sessions running, then verify it applies after relaunch.
+- [ ] Verify the remote Windows keyboard layout and Cyrillic input are unaffected.
+- [ ] Check forms at minimum window size, with long profile/account names and both languages.
+- [ ] Collapse groups, search hidden profiles and edit a profile without connecting.
+- [ ] Trigger a clipboard timeout; verify late replies cannot corrupt the buffer and recovery reconnects only that session.
+- [ ] Read earlier log entries while new entries arrive; scrolling must stay in place.
+- [ ] Occlude a session and reveal it; the current frame must appear without stale areas.
+- [ ] Check VoiceOver names for server, port, user, domain, password and group fields.
+
+Automated session-window checks run in both EN and RU. Protocol tests exercise
+timeout recovery state and polling timer suspension without waiting for a real
+server. These checks do not mark the manual items above as passed.

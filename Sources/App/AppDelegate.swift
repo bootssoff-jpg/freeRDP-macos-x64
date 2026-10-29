@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @discardableResult
-    func createSession(profile: Profile? = nil, showWindow: Bool = true) -> MainWindowController {
+    func createSession(profile: Profile? = nil, showWindow: Bool = true, connectAutomatically: Bool = true) -> MainWindowController {
         let controller = MainWindowController(showWindow: showWindow)
         sessionControllers.append(controller)
         controller.onActivate = { [weak self] controller in self?.activateSession(controller) }
@@ -28,7 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if self.activeController === controller { self.activateSession(nil) }
             self.connectionsController?.reload()
         }
-        if let profile { controller.openProfile(profile) }
+        if let profile {
+            if connectAutomatically { controller.openProfile(profile) }
+            else { controller.selectProfile(profile) }
+        }
         if showWindow {
             controller.window?.cascadeTopLeft(from: NSPoint(x: 100 + sessionControllers.count * 24,
                                                           y: 850 - sessionControllers.count * 24))
@@ -52,11 +55,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showConnections(_ sender: Any?) {
         if connectionsController == nil {
             let controller = ConnectionsWindowController()
+            controller.onEdit = { [weak self] profile in
+                self?.createSession(profile: profile, connectAutomatically: false)
+            }
             controller.onOpen = { [weak self] profile in self?.createSession(profile: profile) }
             controller.sessionStatus = { [weak self] id in
                 let sessions = self?.sessionControllers.filter { $0.runningProfileID == id } ?? []
                 let connected = sessions.filter { $0.isConnected }.count
-                return sessions.isEmpty ? "—" : "Подключено: \(connected), всего: \(sessions.count)"
+                return sessions.isEmpty ? "—" : L("Активных: %@", String(describing: connected))
             }
             controller.onNew = { [weak self] in self?.createSession() }
             controller.onActivate = { [weak self] in self?.activateSession(nil) }
@@ -113,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = buildMenu()
         showConnections(nil)
         NSApp.activate(ignoringOtherApps: true)
-        LogStore.shared.append("Интерфейс запущен. Сессий: 0", level: 0)
+        LogStore.shared.append(L("Интерфейс запущен. Сессий: 0"), level: 0)
 
         // Diagnostic launch options open real windows; they never fabricate a
         // session or connect anywhere.
@@ -158,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        LogStore.shared.append("Приложение завершено", level: 0)
+        LogStore.shared.append(L("Приложение завершено"), level: 0)
     }
 
     // MARK: - Menu
@@ -177,34 +183,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func buildMenu() -> NSMenu {
+        sessionMenuItems.removeAll()
         let main = NSMenu()
         let controller = commandTarget ?? sessionControllers.first
 
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(menuItem("О программе RDP Mac",
+        appMenu.addItem(menuItem(L("О программе RDP Mac"),
                                  action: #selector(showAbout(_:)),
                                  target: self))
-        appMenu.addItem(menuItem("Что поддерживается",
+        appMenu.addItem(menuItem(L("Что поддерживается"),
                                  action: #selector(showHelp(_:)),
                                  key: "?",
                                  target: self))
         appMenu.addItem(.separator())
-        appMenu.addItem(menuItem("Скрыть RDP Mac",
+        let languageItem = NSMenuItem(title: L("Язык / Language"), action: nil, keyEquivalent: "")
+        let languageMenu = NSMenu(title: L("Язык / Language"))
+        for (code, title) in [("system", L("Как в системе")), ("en", "English"), ("ru", L("Русский"))] {
+            let item = menuItem(title, action: #selector(changeLanguage(_:)), target: self)
+            item.representedObject = code
+            item.state = AppLanguage.preference == code ? .on : .off
+            languageMenu.addItem(item)
+        }
+        languageItem.submenu = languageMenu
+        appMenu.addItem(languageItem)
+        appMenu.addItem(.separator())
+        appMenu.addItem(menuItem(L("Скрыть RDP Mac"),
                                  action: #selector(NSApplication.hide(_:)),
                                  key: "h",
                                  target: NSApp))
-        appMenu.addItem(menuItem("Скрыть остальные",
+        appMenu.addItem(menuItem(L("Скрыть остальные"),
                                  action: #selector(NSApplication.hideOtherApplications(_:)),
                                  key: "h",
                                  modifiers: [.command, .option],
                                  target: NSApp))
-        appMenu.addItem(menuItem("Показать все",
+        appMenu.addItem(menuItem(L("Показать все"),
                                  action: #selector(NSApplication.unhideAllApplications(_:)),
                                  target: NSApp))
         appMenu.addItem(.separator())
-        appMenu.addItem(menuItem("Завершить RDP Mac",
+        appMenu.addItem(menuItem(L("Завершить RDP Mac"),
                                  action: #selector(NSApplication.terminate(_:)),
                                  key: "q",
                                  target: NSApp))
@@ -212,25 +230,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let fileItem = NSMenuItem()
         main.addItem(fileItem)
-        let fileMenu = NSMenu(title: "Файл")
-        fileMenu.addItem(menuItem("Новая сессия", action: #selector(newSession(_:)),
+        let fileMenu = NSMenu(title: L("Файл"))
+        fileMenu.addItem(menuItem(L("Новая сессия"), action: #selector(newSession(_:)),
                                   key: "n", target: self))
-        fileMenu.addItem(menuItem("Подключения…", action: #selector(showConnections(_:)),
+        fileMenu.addItem(menuItem(L("Подключения…"), action: #selector(showConnections(_:)),
                                   key: "0", target: self))
         fileMenu.addItem(.separator())
-        fileMenu.addItem(menuItem("Параметры подключения",
+        fileMenu.addItem(menuItem(L("Параметры подключения"),
                                   action: #selector(MainWindowController.showSettings(_:)),
                                   key: ",",
                                   target: controller,
                                   sessionScoped: true))
         fileMenu.addItem(.separator())
-        fileMenu.addItem(menuItem("Экспорт журнала…",
+        fileMenu.addItem(menuItem(L("Экспорт журнала…"),
                                   action: #selector(exportLog(_:)),
                                   key: "e",
                                   modifiers: [.command, .shift],
                                   target: self))
         fileMenu.addItem(.separator())
-        fileMenu.addItem(menuItem("Закрыть окно",
+        fileMenu.addItem(menuItem(L("Закрыть окно"),
                                   action: #selector(NSWindow.performClose(_:)),
                                   key: "w",
                                   target: nil))
@@ -238,38 +256,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let editItem = NSMenuItem()
         main.addItem(editItem)
-        let editMenu = NSMenu(title: "Правка")
-        editMenu.addItem(menuItem("Отменить", action: NSSelectorFromString("undo:"), key: "z",
+        let editMenu = NSMenu(title: L("Правка"))
+        editMenu.addItem(menuItem(L("Отменить"), action: NSSelectorFromString("undo:"), key: "z",
                                   target: nil))
-        editMenu.addItem(menuItem("Повторить", action: NSSelectorFromString("redo:"), key: "z",
+        editMenu.addItem(menuItem(L("Повторить"), action: NSSelectorFromString("redo:"), key: "z",
                                   modifiers: [.command, .shift], target: nil))
         editMenu.addItem(.separator())
-        editMenu.addItem(menuItem("Вырезать", action: NSSelectorFromString("cut:"), key: "x",
+        editMenu.addItem(menuItem(L("Вырезать"), action: NSSelectorFromString("cut:"), key: "x",
                                   target: nil))
-        editMenu.addItem(menuItem("Копировать", action: NSSelectorFromString("copy:"), key: "c",
+        editMenu.addItem(menuItem(L("Копировать"), action: NSSelectorFromString("copy:"), key: "c",
                                   target: nil))
-        editMenu.addItem(menuItem("Вставить", action: NSSelectorFromString("paste:"), key: "v",
+        editMenu.addItem(menuItem(L("Вставить"), action: NSSelectorFromString("paste:"), key: "v",
                                   target: nil))
-        editMenu.addItem(menuItem("Выбрать всё", action: NSSelectorFromString("selectAll:"),
+        editMenu.addItem(menuItem(L("Выбрать всё"), action: NSSelectorFromString("selectAll:"),
                                   key: "a", target: nil))
         editItem.submenu = editMenu
 
         let sessionItem = NSMenuItem()
         main.addItem(sessionItem)
-        let sessionMenu = NSMenu(title: "Сеанс")
-        sessionMenu.addItem(menuItem("Отключиться",
+        let sessionMenu = NSMenu(title: L("Сеанс"))
+        sessionMenu.addItem(menuItem(L("Отключиться"),
                                      action: #selector(MainWindowController.disconnect(_:)),
                                      key: "d",
                                      target: controller,
                                      sessionScoped: true))
-        sessionMenu.addItem(menuItem("Отправить Ctrl+Alt+Delete",
+        sessionMenu.addItem(menuItem(L("Отправить Ctrl+Alt+Delete"),
                                      action: #selector(MainWindowController.sendCtrlAltDelete(_:)),
                                      key: String(UnicodeScalar(NSDeleteCharacter)!),
                                      modifiers: [.command, .shift],
                                      target: controller,
                                      sessionScoped: true))
         sessionMenu.addItem(.separator())
-        sessionMenu.addItem(menuItem("Полноэкранный режим",
+        sessionMenu.addItem(menuItem(L("Полноэкранный режим"),
                                      action: #selector(MainWindowController
                                          .toggleFullScreenAction(_:)),
                                      key: "f",
@@ -280,22 +298,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let clipboardItem = NSMenuItem()
         main.addItem(clipboardItem)
-        let clipboardMenu = NSMenu(title: "Буфер обмена")
-        clipboardMenu.addItem(menuItem("Отправить Mac → Windows",
+        let clipboardMenu = NSMenu(title: L("Буфер обмена"))
+        clipboardMenu.addItem(menuItem(L("Отправить Mac → Windows"),
                                        action: #selector(MainWindowController
                                            .clipboardSendLocal(_:)),
                                        key: "c",
                                        modifiers: [.command, .shift],
                                        target: controller,
                                        sessionScoped: true))
-        clipboardMenu.addItem(menuItem("Запросить Windows → Mac",
+        clipboardMenu.addItem(menuItem(L("Запросить Windows → Mac"),
                                        action: #selector(MainWindowController
                                            .clipboardRequestRemote(_:)),
                                        key: "v",
                                        modifiers: [.command, .shift],
                                        target: controller,
                                        sessionScoped: true))
-        clipboardMenu.addItem(menuItem("Полная ресинхронизация",
+        clipboardMenu.addItem(menuItem(L("Полная ресинхронизация"),
                                        action: #selector(MainWindowController
                                            .clipboardResync(_:)),
                                        key: "v",
@@ -303,7 +321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                        target: controller,
                                        sessionScoped: true))
         clipboardMenu.addItem(.separator())
-        clipboardMenu.addItem(menuItem("Диагностика буфера обмена",
+        clipboardMenu.addItem(menuItem(L("Диагностика буфера обмена"),
                                        action: #selector(MainWindowController
                                            .showDiagnostics(_:)),
                                        key: "b",
@@ -314,13 +332,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let diagnosticsItem = NSMenuItem()
         main.addItem(diagnosticsItem)
-        let diagnosticsMenu = NSMenu(title: "Диагностика")
-        diagnosticsMenu.addItem(menuItem("Показать журнал",
+        let diagnosticsMenu = NSMenu(title: L("Диагностика"))
+        diagnosticsMenu.addItem(menuItem(L("Показать журнал"),
                                          action: #selector(showLog(_:)),
                                          key: "l",
                                          modifiers: [.command, .shift],
                                          target: self))
-        diagnosticsMenu.addItem(menuItem("Экспорт журнала…",
+        diagnosticsMenu.addItem(menuItem(L("Экспорт журнала…"),
                                          action: #selector(exportLog(_:)),
                                          key: "e",
                                          modifiers: [.command, .option],
@@ -328,10 +346,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         diagnosticsItem.submenu = diagnosticsMenu
 
         let windowItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "Окно")
-        windowMenu.addItem(menuItem("Свернуть", action: #selector(NSWindow.performMiniaturize(_:)),
+        let windowMenu = NSMenu(title: L("Окно"))
+        windowMenu.addItem(menuItem(L("Свернуть"), action: #selector(NSWindow.performMiniaturize(_:)),
                                     key: "m", target: nil))
-        windowMenu.addItem(menuItem("Все окна на передний план",
+        windowMenu.addItem(menuItem(L("Все окна на передний план"),
                                     action: #selector(NSApplication.arrangeInFront(_:)), target: NSApp))
         windowItem.submenu = windowMenu
         main.addItem(windowItem)
@@ -339,18 +357,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let helpItem = NSMenuItem()
         main.addItem(helpItem)
-        let helpMenu = NSMenu(title: "Справка")
-        helpMenu.addItem(menuItem("Что поддерживается",
+        let helpMenu = NSMenu(title: L("Справка"))
+        helpMenu.addItem(menuItem(L("Что поддерживается"),
                                   action: #selector(showHelp(_:)),
                                   key: "/",
                                   modifiers: [.command, .shift],
                                   target: self))
-        helpMenu.addItem(menuItem("FreeRDP — официальный сайт",
+        helpMenu.addItem(menuItem(L("FreeRDP — официальный сайт"),
                                   action: #selector(openFreeRDP),
                                   target: self))
         helpItem.submenu = helpMenu
 
         return main
+    }
+
+    @objc private func changeLanguage(_ sender: NSMenuItem) {
+        guard let language = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(language, forKey: "RDPMacLanguage")
+        sender.menu?.items.forEach { $0.state = ($0.representedObject as? String) == language ? .on : .off }
+        let alert = NSAlert()
+        alert.messageText = L("Язык изменится после перезапуска")
+        alert.informativeText = L("Завершите приложение и откройте его снова, когда закончите работу с сессиями. Язык интерфейса не меняет раскладку клавиатуры Windows.")
+        alert.addButton(withTitle: L("Понятно"))
+        alert.runModal()
     }
 
     @objc func showAbout(_ sender: Any?) {
@@ -361,9 +390,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showHelp(_ sender: Any?) {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "RDP Mac: что уже работает"
+        alert.messageText = L("RDP Mac: что уже работает")
         alert.informativeText = HelpText.supported
-        alert.addButton(withTitle: "Понятно")
+        alert.addButton(withTitle: L("Понятно"))
         alert.runModal()
     }
 
@@ -388,7 +417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let panel = NSSavePanel()
-        panel.title = "Экспорт журнала RDP Mac"
+        panel.title = L("Экспорт журнала RDP Mac")
         panel.nameFieldStringValue = "rdp-mac-log.txt"
         panel.allowedContentTypes = [.plainText]
         if let window = NSApp.keyWindow {
@@ -396,18 +425,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard response == .OK, let url = panel.url else { return }
                 do {
                     try LogStore.shared.export(to: url)
-                    LogStore.shared.append("Журнал экспортирован: \(url.lastPathComponent)", level: 0)
+                    LogStore.shared.append(L("Журнал экспортирован: %@", String(describing: url.lastPathComponent)), level: 0)
                 } catch {
-                    LogStore.shared.append("Не удалось экспортировать журнал: "
+                    LogStore.shared.append(L("Не удалось экспортировать журнал: ")
                                            + error.localizedDescription, level: 2)
                 }
             }
         } else if panel.runModal() == .OK, let url = panel.url {
             do {
                 try LogStore.shared.export(to: url)
-                LogStore.shared.append("Журнал экспортирован: \(url.lastPathComponent)", level: 0)
+                LogStore.shared.append(L("Журнал экспортирован: %@", String(describing: url.lastPathComponent)), level: 0)
             } catch {
-                LogStore.shared.append("Не удалось экспортировать журнал: "
+                LogStore.shared.append(L("Не удалось экспортировать журнал: ")
                                        + error.localizedDescription, level: 2)
             }
         }

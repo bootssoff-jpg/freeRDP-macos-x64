@@ -117,6 +117,7 @@ final class RDPView: NSView {
     }
 
     func invalidate(remoteRect: CGRect) {
+        guard window?.occlusionState.contains(.visible) == true else { return }
         guard remoteWidth > 0, remoteHeight > 0 else {
             needsDisplay = true
             return

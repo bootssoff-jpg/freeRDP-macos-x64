@@ -53,3 +53,11 @@ actually uploaded.
 - Live Windows integration remains a manual checklist; it was not available in
   the build environment.
 - Unsigned/ad-hoc artifacts are not notarized.
+
+### Interface and documentation follow-up
+
+- English/Russian menus, forms, diagnostics and connection errors; system or explicit language choice, applied after relaunch.
+- Profile editing from the manager, collapsible groups and advanced connection settings.
+- Explicit reconnect recovery after a clipboard timeout.
+- Foreground-only polling timers, batched log updates and preserved log scroll position.
+- Offscreen EN/RU interface previews using reserved demo profiles.

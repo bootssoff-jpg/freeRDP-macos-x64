@@ -4,13 +4,15 @@ import UniformTypeIdentifiers
 final class LogWindowController: NSWindowController {
     private let textView = NSTextView()
     private let scrollView = NSScrollView()
+    private var refreshWork: DispatchWorkItem?
+    private var displayedText = ""
 
     convenience init() {
         let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 820, height: 560),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable],
                               backing: .buffered,
                               defer: false)
-        window.title = "Журнал RDP Mac"
+        window.title = L("Журнал RDP Mac")
         window.minSize = NSSize(width: 640, height: 400)
         window.isReleasedWhenClosed = false
         window.center()
@@ -42,9 +44,9 @@ final class LogWindowController: NSWindowController {
         scrollView.borderType = .bezelBorder
         scrollView.documentView = textView
 
-        let export = UI.button("Экспорт…", target: self, action: #selector(exportLog(_:)))
-        let clear = UI.button("Очистить журнал", target: self, action: #selector(clearLog(_:)))
-        let close = UI.button("Закрыть", target: self, action: #selector(closeWindow(_:)))
+        let export = UI.button(L("Экспорт…"), target: self, action: #selector(exportLog(_:)))
+        let clear = UI.button(L("Очистить журнал"), target: self, action: #selector(clearLog(_:)))
+        let close = UI.button(L("Закрыть"), target: self, action: #selector(closeWindow(_:)))
         let buttons = UI.hStack([export, clear, NSView(), close], spacing: 8)
         buttons.translatesAutoresizingMaskIntoConstraints = false
 
@@ -62,23 +64,37 @@ final class LogWindowController: NSWindowController {
     }
 
     @objc func refresh() {
-        textView.string = LogStore.shared.text()
-        textView.scrollToEndOfDocument(nil)
+        guard refreshWork == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.refreshWork = nil
+            let followTail = self.scrollView.documentVisibleRect.maxY >= self.textView.bounds.maxY - 24
+            let text = LogStore.shared.text()
+            if text.hasPrefix(self.displayedText), let storage = self.textView.textStorage {
+                storage.append(NSAttributedString(string: String(text.dropFirst(self.displayedText.count))))
+            } else {
+                self.textView.string = text
+            }
+            self.displayedText = text
+            if followTail { self.textView.scrollToEndOfDocument(nil) }
+        }
+        refreshWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
     @objc private func exportLog(_ sender: Any?) {
         guard let window else { return }
         let panel = NSSavePanel()
-        panel.title = "Экспорт журнала"
+        panel.title = L("Экспорт журнала")
         panel.nameFieldStringValue = "rdp-mac-log.txt"
         panel.allowedContentTypes = [.plainText]
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }
             do {
                 try LogStore.shared.export(to: url)
-                LogStore.shared.append("Журнал экспортирован: \(url.lastPathComponent)", level: 0)
+                LogStore.shared.append(L("Журнал экспортирован: %@", String(describing: url.lastPathComponent)), level: 0)
             } catch {
-                LogStore.shared.append("Не удалось экспортировать журнал: "
+                LogStore.shared.append(L("Не удалось экспортировать журнал: ")
                                        + error.localizedDescription, level: 2)
             }
         }

@@ -62,6 +62,7 @@ done
 echo "Compiling Swift/AppKit UI and linking..."
 swiftc \
     -swift-version 5 \
+    -module-cache-path "$BUILD/module-cache" \
     -O \
     -whole-module-optimization \
     -target "x86_64-apple-macos$MIN_MACOS" \
@@ -80,6 +81,7 @@ swiftc \
     -lpthread -ldl -lm
 
 [ -f "$ROOT/Resources/RDPMac.icns" ] || fail "Resources/RDPMac.icns is missing"
+cp -R "$ROOT/Resources/en.lproj" "$ROOT/Resources/ru.lproj" "$APP/Contents/Resources/"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/RDPMac.icns" "$APP/Contents/Resources/RDPMac.icns"
 mkdir -p "$APP/Contents/Resources/Licenses"

@@ -97,6 +97,29 @@ STAGE="$(mktemp -d "${TMPDIR:-/tmp}/rdpmac-dmg.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
+cat > "$STAGE/Installation - Установка.txt" <<'INSTALL'
+RDP Mac — Intel macOS 12+ / macOS 12 и новее на Intel
+
+ENGLISH
+1. Copy RDP Mac.app to Applications using the shortcut in this disk image.
+2. Eject the disk image and launch the copy in Applications.
+3. This preview is ad-hoc signed, not Developer ID signed or notarized.
+   Verify the download and its source before using macOS per-app approval.
+4. Choose New connection to enter your server and credentials.
+5. Choose RDP Mac > Language / Язык to select a language for the next launch.
+Passwords and clipboard contents are never included in the application log.
+
+РУССКИЙ
+1. Перетащите RDP Mac.app на ссылку Applications в этом образе.
+2. Извлеките образ и запустите копию приложения из «Программы».
+3. Предварительная сборка имеет подпись ad-hoc, без Developer ID и нотаризации.
+   Перед индивидуальным разрешением запуска средствами macOS проверьте источник.
+4. Нажмите «Новое подключение», введите сервер и учётные данные.
+5. Меню RDP Mac > Язык / Language позволяет выбрать язык следующего запуска.
+Пароли и содержимое буфера не включаются в журнал приложения.
+
+https://github.com/bootssoff-jpg/freeRDP-macos-x64
+INSTALL
 hdiutil create -volname "RDP Mac" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 
 (cd "$DIST" && shasum -a 256 "$(basename "$ZIP")" "$(basename "$DMG")" > SHA256SUMS)

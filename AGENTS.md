@@ -101,3 +101,11 @@ Automated tests cannot replace a live Windows session. When changing clipboard
 or connection logic, run `make test` and update the manual checklist in
 `docs/testing.md` if behavior changes. Do not claim a real RDP/Windows test was
 performed unless it actually was.
+
+## Localization and UI previews
+
+- Ship both `Resources/en.lproj` and `Resources/ru.lproj` in the bundle.
+- Use Swift `L` / Objective-C `RDPMacLocalizedString` for user-facing text; preserve format placeholders. Never translate user data.
+- Language preference applies after relaunch and must not change remote keyboard layout.
+- `make test` checks session UI in both languages; `scripts/render_previews.sh` renders real AppKit views with in-memory `.invalid` demo profiles only.
+- Keep timeout recovery explicit: CLIPRDR responses have no request ID. Do not clear outstanding state and accept late data as a new response.

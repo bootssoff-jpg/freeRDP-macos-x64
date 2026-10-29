@@ -42,36 +42,38 @@ final class ConnectFormView: NSView {
     var onShowLog: (() -> Void)?
 
     private let profilePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let saveProfileButton = UI.button("Сохранить профиль", target: nil, action: nil)
-    private let deleteProfileButton = UI.button("Удалить профиль", target: nil, action: nil)
-    private let groupField = UI.textField(placeholder: "Например: Работа или Дом", width: 300)
+    private let saveProfileButton = UI.button(L("Сохранить профиль"), target: nil, action: nil)
+    private let deleteProfileButton = UI.button(L("Удалить профиль"), target: nil, action: nil)
+    private let groupField = UI.textField(placeholder: L("Например: Работа или Дом"), width: 300)
     private let hostField = UI.textField(placeholder: "server.example.local", width: 300)
     private let portField = UI.textField(placeholder: "3389", width: 70)
-    private let usernameField = UI.textField(placeholder: "Пользователь", width: 220)
-    private let domainField = UI.textField(placeholder: "Домен (необязательно)", width: 200)
-    private let passwordField = UI.secureField(placeholder: "Пароль", width: 300)
+    private let usernameField = UI.textField(placeholder: L("Пользователь"), width: 220)
+    private let domainField = UI.textField(placeholder: L("Домен (необязательно)"), width: 200)
+    private let passwordField = UI.secureField(placeholder: L("Пароль"), width: 300)
     private let savePasswordCheckbox =
-        UI.checkbox("Сохранить пароль в Keychain", target: nil, action: nil)
-    private let forgetPasswordButton = UI.button("Забыть пароль", target: nil, action: nil)
+        UI.checkbox(L("Сохранить пароль в Keychain"), target: nil, action: nil)
+    private let forgetPasswordButton = UI.button(L("Забыть пароль"), target: nil, action: nil)
     private let securityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let resolutionPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let clipboardCheckbox =
-        UI.checkbox("Двусторонний текстовый буфер обмена", target: nil, action: nil, state: true)
+        UI.checkbox(L("Двусторонний текстовый буфер обмена"), target: nil, action: nil, state: true)
     private let commandAsControlCheckbox =
-        UI.checkbox("Передавать Command как Ctrl (Cmd+C → Ctrl+C)", target: nil, action: nil,
+        UI.checkbox(L("Передавать Command как Ctrl (Cmd+C → Ctrl+C)"), target: nil, action: nil,
                     state: true)
     private let autoResizeCheckbox =
-        UI.checkbox("Подстраивать разрешение под окно (DisplayControl)", target: nil, action: nil,
+        UI.checkbox(L("Подстраивать разрешение под окно (DisplayControl)"), target: nil, action: nil,
                     state: true)
     private let legacyTLSCheckbox =
-        UI.checkbox("Совместимость TLS со старыми серверами (снижает стойкость)",
+        UI.checkbox(L("Совместимость TLS со старыми серверами (снижает стойкость)"),
                     target: nil, action: nil, state: false)
-    private let connectButton = UI.button("Подключиться", target: nil, action: nil)
+    private let connectButton = UI.button(L("Подключиться"), target: nil, action: nil)
     private let progress = NSProgressIndicator()
     private let statusLabel = UI.label("", size: 12, color: .secondaryLabelColor, lines: 3)
-    private let diagnosticsButton = UI.button("Диагностика буфера", target: nil, action: nil)
-    private let logButton = UI.button("Журнал", target: nil, action: nil)
+    private let diagnosticsButton = UI.button(L("Диагностика буфера"), target: nil, action: nil)
+    private let logButton = UI.button(L("Журнал"), target: nil, action: nil)
 
+    private var advancedView: NSView?
+    private var advancedToggle: NSButton?
     private var profiles: [Profile] = []
     private var selectedProfileID: UUID?
     private var programmaticSelection = false
@@ -88,8 +90,8 @@ final class ConnectFormView: NSView {
     private func buildUI() {
         translatesAutoresizingMaskIntoConstraints = false
 
-        let title = UI.label("Подключение к удалённому рабочему столу", size: 20, weight: .semibold)
-        let subtitle = UI.label("FreeRDP 3.32.2 · нативный клиент для macOS x86_64",
+        let title = UI.label(L("Подключение к удалённому рабочему столу"), size: 20, weight: .semibold)
+        let subtitle = UI.label(L("FreeRDP 3.32.2 · нативный клиент для macOS x86_64"),
                                 size: 12, color: .secondaryLabelColor)
 
         profilePopup.translatesAutoresizingMaskIntoConstraints = false
@@ -124,40 +126,55 @@ final class ConnectFormView: NSView {
         progress.isDisplayedWhenStopped = false
 
         let profileRow = UI.hStack([profilePopup, saveProfileButton, deleteProfileButton])
-        let serverRow = UI.hStack([hostField, UI.label("Порт"), portField])
-        let userRow = UI.hStack([usernameField, UI.label("Домен"), domainField])
+        let serverRow = UI.hStack([hostField, UI.label(L("Порт")), portField])
+        let userRow = UI.hStack([usernameField, UI.label(L("Домен")), domainField])
         let passwordRow = UI.hStack([passwordField, savePasswordCheckbox, forgetPasswordButton])
         let securityRow = UI.hStack([securityPopup])
         let resolutionRow = UI.hStack([resolutionPopup])
         legacyTLSCheckbox.toolTip =
-            "Разрешает TLS SECLEVEL=0 для серверов со старыми сертификатами "
-            + "(например, SHA-1/RSA-1024). Сертификат всё равно нужно подтвердить вручную."
+            L("Разрешает TLS SECLEVEL=0 для серверов со старыми сертификатами ")
+            + L("(например, SHA-1/RSA-1024). Сертификат всё равно нужно подтвердить вручную.")
         let options = UI.vStack([clipboardCheckbox, commandAsControlCheckbox, autoResizeCheckbox,
                                  legacyTLSCheckbox], spacing: 5)
         let actionRow = UI.hStack([connectButton, progress], spacing: 12)
         let footer = UI.hStack([diagnosticsButton, logButton], spacing: 8)
 
         let grid = NSGridView(views: [
-            [UI.label("Профиль", weight: .medium), profileRow],
-            [UI.label("Группа", weight: .medium), groupField],
-            [UI.label("Сервер", weight: .medium), serverRow],
-            [UI.label("Пользователь", weight: .medium), userRow],
-            [UI.label("Пароль", weight: .medium), passwordRow],
-            [UI.label("Безопасность", weight: .medium), securityRow],
-            [UI.label("Разрешение", weight: .medium), resolutionRow],
+            [UI.label(L("Профиль"), weight: .medium), profileRow],
+            [UI.label(L("Группа"), weight: .medium), groupField],
+            [UI.label(L("Сервер"), weight: .medium), serverRow],
+            [UI.label(L("Пользователь"), weight: .medium), userRow],
+            [UI.label(L("Пароль"), weight: .medium), passwordRow]
+        ])
+        let advanced = NSGridView(views: [
+            [UI.label(L("Безопасность"), weight: .medium), securityRow],
+            [UI.label(L("Разрешение"), weight: .medium), resolutionRow],
             [NSGridCell.emptyContentView, options]
         ])
-        grid.translatesAutoresizingMaskIntoConstraints = false
-        grid.rowSpacing = 10
-        grid.columnSpacing = 14
-        grid.column(at: 0).xPlacement = .trailing
-        grid.rowAlignment = .firstBaseline
+        for section in [grid, advanced] {
+            section.translatesAutoresizingMaskIntoConstraints = false
+            section.rowSpacing = 10
+            section.columnSpacing = 14
+            section.column(at: 0).xPlacement = .trailing
+            section.rowAlignment = .firstBaseline
+        }
+        advanced.isHidden = true
+        advancedView = advanced
+        let disclosure = NSButton(checkboxWithTitle: L("Дополнительные параметры"), target: self,
+                                  action: #selector(toggleAdvanced(_:)))
+        disclosure.setButtonType(.onOff)
+        advancedToggle = disclosure
+        for (field, label) in [(hostField, L("Сервер")), (portField, L("Порт")),
+                               (usernameField, L("Пользователь")), (domainField, L("Домен")),
+                               (passwordField, L("Пароль")), (groupField, L("Группа"))] {
+            field.setAccessibilityLabel(label)
+        }
 
-        let hint = UI.label("Пароль не сохраняется в JSON-профиле. Keychain используется только при "
-                            + "явном согласии. Проверка сертификата включена всегда.",
+        let hint = UI.label(L("Пароль не сохраняется в JSON-профиле. Keychain используется только при ")
+                            + L("явном согласии. Проверка сертификата включена всегда."),
                             size: 11, color: .tertiaryLabelColor, lines: 2)
 
-        let stack = UI.vStack([title, subtitle, UI.divider(), grid, actionRow, statusLabel,
+        let stack = UI.vStack([title, subtitle, UI.divider(), grid, disclosure, advanced, actionRow, statusLabel,
                                footer, hint], spacing: 10)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
@@ -171,6 +188,10 @@ final class ConnectFormView: NSView {
         ])
     }
 
+    @objc private func toggleAdvanced(_ sender: NSButton) {
+        advancedView?.isHidden = sender.state != .on
+    }
+
     // MARK: - Public API
 
     func setProfiles(_ profiles: [Profile], selectedID: UUID?) {
@@ -178,7 +199,7 @@ final class ConnectFormView: NSView {
         self.selectedProfileID = selectedID
         programmaticSelection = true
         profilePopup.removeAllItems()
-        profilePopup.addItem(withTitle: "— Новый профиль —")
+        profilePopup.addItem(withTitle: L("— Новый профиль —"))
         for profile in profiles {
             profilePopup.addItem(withTitle: profile.displayName)
         }
@@ -199,6 +220,9 @@ final class ConnectFormView: NSView {
         portField.stringValue = String(profile.port)
         usernameField.stringValue = profile.username
         domainField.stringValue = profile.domain
+        let hasAdvancedSettings = profile.security != .negotiate || (profile.legacyTLS ?? false)
+        advancedView?.isHidden = !hasAdvancedSettings
+        advancedToggle?.state = hasAdvancedSettings ? .on : .off
         securityPopup.selectItem(at: profile.security.rawValue)
         resolutionPopup.selectItem(at: profile.resolution.rawValue)
         clipboardCheckbox.state = profile.clipboardEnabled ? .on : .off
@@ -283,11 +307,11 @@ final class ConnectFormView: NSView {
         resolutionPopup.isEnabled = !busy
         if busy {
             progress.startAnimation(nil)
-            connectButton.title = "Подключение…"
+            connectButton.title = L("Подключение…")
             if let message { showMessage(message, isError: false) }
         } else {
             progress.stopAnimation(nil)
-            connectButton.title = "Подключиться"
+            connectButton.title = L("Подключиться")
         }
     }
 
@@ -319,7 +343,7 @@ final class ConnectFormView: NSView {
     @objc private func saveProfile(_ sender: Any?) {
         let host = hostField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty else {
-            showMessage("Укажите адрес сервера перед сохранением профиля.", isError: true)
+            showMessage(L("Укажите адрес сервера перед сохранением профиля."), isError: true)
             return
         }
         onSaveProfile?(makeProfile(name: ""))
@@ -336,15 +360,15 @@ final class ConnectFormView: NSView {
 
     @objc private func savePasswordToggled(_ sender: Any?) {
         if savePasswordCheckbox.state == .off {
-            showMessage("Пароль не будет сохранён. Уже сохранённый можно удалить кнопкой "
-                        + "«Забыть пароль».", isError: false)
+            showMessage(L("Пароль не будет сохранён. Уже сохранённый можно удалить кнопкой ")
+                        + L("«Забыть пароль»."), isError: false)
         }
     }
 
     @objc private func legacyTLSToggled(_ sender: Any?) {
         if legacyTLSCheckbox.state == .on {
-            showMessage("Включён совместимый TLS (SECLEVEL=0). Используйте только для доверенных "
-                        + "старых серверов; сертификат всё равно проверяется вручную.",
+            showMessage(L("Включён совместимый TLS (SECLEVEL=0). Используйте только для доверенных ")
+                        + L("старых серверов; сертификат всё равно проверяется вручную."),
                         isError: false)
         }
     }
@@ -362,17 +386,17 @@ final class ConnectFormView: NSView {
     @objc private func connect(_ sender: Any?) {
         let host = hostField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty else {
-            showMessage("Укажите адрес сервера.", isError: true)
+            showMessage(L("Укажите адрес сервера."), isError: true)
             focusHost()
             return
         }
         guard let port = Int(portField.stringValue), port >= 1, port <= 65535 else {
-            showMessage("Порт должен быть числом от 1 до 65535.", isError: true)
+            showMessage(L("Порт должен быть числом от 1 до 65535."), isError: true)
             return
         }
         let username = usernameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !username.isEmpty else {
-            showMessage("Укажите имя пользователя.", isError: true)
+            showMessage(L("Укажите имя пользователя."), isError: true)
             window?.makeFirstResponder(usernameField)
             return
         }

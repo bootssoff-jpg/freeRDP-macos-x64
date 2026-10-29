@@ -11,6 +11,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// Shared localization for Swift UI and Objective-C errors/diagnostics.
+FOUNDATION_EXPORT NSString *RDPMacLocalizedString(NSString *key);
+
 typedef NS_ENUM(NSInteger, RDPMacConnectionState) {
     RDPMacConnectionStateIdle = 0,
     RDPMacConnectionStateConnecting,
@@ -49,6 +52,7 @@ typedef NS_ENUM(NSInteger, RDPMacCertificateDecision) {
 /// Clipboard channel diagnostics. Never contains clipboard contents.
 @interface RDPMacClipboardDiagnostics : NSObject
 @property (nonatomic, assign) BOOL enabled;
+@property (nonatomic, assign) BOOL requiresReconnect;
 @property (nonatomic, assign) BOOL channelConnected;
 @property (nonatomic, assign) BOOL monitorReady;
 @property (nonatomic, copy) NSArray<NSString *> *localFormats;

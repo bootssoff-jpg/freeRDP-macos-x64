@@ -8,14 +8,18 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
         case group(String)
         case profile(Profile)
     }
+    var profilesProvider: () -> [Profile] = { ProfileStore.shared.profiles }
+    var onEdit: ((Profile) -> Void)?
+    private var collapsedGroups: Set<String> = []
     var onOpen: ((Profile) -> Void)?
     var onNew: (() -> Void)?
     var onActivate: (() -> Void)?
     var sessionStatus: ((UUID) -> String)?
     private let table = NSTableView()
     private let search = NSSearchField()
-    private let openButton = UI.button("Открыть выбранные", target: nil, action: nil)
-    private let emptyLabel = UI.label("Нет подключений. Нажмите «Новое подключение» и сохраните профиль.",
+    private let openButton = UI.button(L("Открыть выбранные"), target: nil, action: nil)
+    private let editButton = UI.button(L("Изменить профиль"), target: nil, action: nil)
+    private let emptyLabel = UI.label(L("Нет подключений. Нажмите «Новое подключение» и сохраните профиль."),
                                       size: 13, color: .secondaryLabelColor, lines: 2)
     private(set) var rows: [Row] = []
 
@@ -23,7 +27,7 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 650),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
-        window.title = "Подключения — RDP Mac"
+        window.title = L("Подключения — RDP Mac")
         window.minSize = NSSize(width: 760, height: 440)
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
@@ -43,22 +47,24 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
 
     private func buildUI() {
         guard let content = window?.contentView else { return }
-        let title = UI.label("Сохранённые подключения", size: 22, weight: .semibold)
-        let new = UI.button("Новое подключение", target: self, action: #selector(newConnection(_:)))
+        let title = UI.label(L("Сохранённые подключения"), size: 22, weight: .semibold)
+        let new = UI.button(L("Новое подключение"), target: self, action: #selector(newConnection(_:)))
+        editButton.target = self
+        editButton.action = #selector(editSelected(_:))
         openButton.target = self
         openButton.action = #selector(openSelected(_:))
-        search.placeholderString = "Поиск по имени, серверу, пользователю или группе"
+        search.placeholderString = L("Поиск по имени, серверу, пользователю или группе")
         search.delegate = self
         search.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
         let toolbar = UI.hStack([title, NSView(), new], spacing: 12)
-        let actions = UI.hStack([search, openButton], spacing: 12)
+        let actions = UI.hStack([search, editButton, openButton], spacing: 12)
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         scroll.documentView = table
         table.headerView = NSTableHeaderView()
-        for (id, title, width) in [("name", "Подключение", 300.0), ("account", "Пользователь", 220.0),
-                                    ("status", "Сессии", 150.0)] {
+        for (id, title, width) in [("name", L("Подключение"), 300.0), ("account", L("Пользователь"), 220.0),
+                                    ("status", L("Сессии"), 150.0)] {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
             column.title = title
             column.width = width
@@ -71,8 +77,8 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
         table.dataSource = self
         table.target = self
         table.doubleAction = #selector(openSelected(_:))
-        let hint = UI.label("Двойной щелчок открывает профиль в новом окне. ⌘N — новая сессия. "
-                             + "Буфер обмена синхронизируется только с активной сессией.",
+        let hint = UI.label(L("Двойной щелчок открывает профиль в новом окне. ⌘N — новая сессия. ")
+                             + L("Буфер обмена синхронизируется только с активной сессией."),
                             size: 11, color: .secondaryLabelColor, lines: 2)
         let stack = UI.vStack([toolbar, actions, emptyLabel, scroll, hint], spacing: 12)
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -89,7 +95,7 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
         ])
     }
 
-    static func groupedRows(profiles: [Profile], query: String) -> [Row] {
+    static func groupedRows(profiles: [Profile], query: String, collapsedGroups: Set<String> = []) -> [Row] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let profiles = profiles.filter { profile in
             query.isEmpty || [profile.displayName, profile.host, profile.username,
@@ -100,7 +106,7 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
         let groups = Dictionary(grouping: profiles, by: { $0.groupName })
         return groups.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
             .flatMap { name -> [Row] in
-                [.group(name)] + (groups[name] ?? []).sorted {
+                [.group(name)] + (query.isEmpty && collapsedGroups.contains(name) ? [] : (groups[name] ?? [])).sorted {
                     $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
                 }.map { .profile($0) }
             }
@@ -111,7 +117,7 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
             guard rows.indices.contains(index), case .profile(let profile) = rows[index] else { return nil }
             return profile.id
         })
-        rows = Self.groupedRows(profiles: ProfileStore.shared.profiles, query: search.stringValue)
+        rows = Self.groupedRows(profiles: profilesProvider(), query: search.stringValue, collapsedGroups: collapsedGroups)
         table.reloadData()
         let indexes = rows.indices.filter {
             if case .profile(let profile) = rows[$0] { return selection.contains(profile.id) }
@@ -121,8 +127,8 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
         updateSelectionState()
         emptyLabel.isHidden = !rows.isEmpty
         emptyLabel.stringValue = search.stringValue.isEmpty
-            ? "Нет подключений. Нажмите «Новое подключение» и сохраните профиль."
-            : "Подключения не найдены."
+            ? L("Нет подключений. Нажмите «Новое подключение» и сохраните профиль.")
+            : L("Подключения не найдены.")
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
@@ -130,6 +136,7 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
         updateSelectionState()
     }
     private func updateSelectionState() {
+        editButton.isEnabled = table.selectedRowIndexes.count == 1
         openButton.isEnabled = table.selectedRowIndexes.contains { index in
             rows.indices.contains(index) && {
                 if case .profile = rows[index] { return true }
@@ -152,7 +159,14 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         switch rows[row] {
         case .group(let name):
-            return UI.label(name, size: 15, weight: .semibold)
+            let title = "\(collapsedGroups.contains(name) && search.stringValue.isEmpty ? "▸" : "▾") \(name)"
+            let button = NSButton(title: title, target: self, action: #selector(toggleGroup(_:)))
+            button.isBordered = false
+            button.font = .systemFont(ofSize: 15, weight: .semibold)
+            button.alignment = .left
+            button.tag = row
+            button.setAccessibilityLabel(name)
+            return button
         case .profile(let profile):
             switch tableColumn?.identifier.rawValue {
             case "account":
@@ -170,6 +184,16 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
     func controlTextDidChange(_ obj: Notification) { reload() }
     func windowDidBecomeMain(_ notification: Notification) { onActivate?(); reload() }
     @objc private func newConnection(_ sender: Any?) { onNew?() }
+    @objc private func toggleGroup(_ sender: NSButton) {
+        guard rows.indices.contains(sender.tag), case .group(let name) = rows[sender.tag] else { return }
+        if !collapsedGroups.insert(name).inserted { collapsedGroups.remove(name) }
+        reload()
+    }
+    @objc private func editSelected(_ sender: Any?) {
+        guard table.selectedRowIndexes.count == 1, let index = table.selectedRowIndexes.first,
+              rows.indices.contains(index), case .profile(let profile) = rows[index] else { return }
+        onEdit?(profile)
+    }
     @objc func openSelected(_ sender: Any?) {
         let profiles = table.selectedRowIndexes.compactMap { index -> Profile? in
             guard rows.indices.contains(index), case .profile(let profile) = rows[index] else { return nil }

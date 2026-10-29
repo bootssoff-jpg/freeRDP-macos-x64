@@ -36,57 +36,56 @@ static NSString *RDPMacErrorText(UINT32 code)
 {
     switch (code) {
         case FREERDP_ERROR_SUCCESS:
-            return @"Соединение завершено";
+            return RDPMacLocalizedString(@"Соединение завершено");
         case FREERDP_ERROR_DNS_ERROR:
         case FREERDP_ERROR_DNS_NAME_NOT_FOUND:
-            return @"Не удалось разрешить имя сервера (DNS). Проверьте адрес и сеть.";
+            return RDPMacLocalizedString(@"Не удалось разрешить имя сервера (DNS). Проверьте адрес и сеть.");
         case FREERDP_ERROR_CONNECT_FAILED:
         case FREERDP_ERROR_CONNECT_TRANSPORT_FAILED:
-            return @"Не удалось подключиться к серверу. Проверьте адрес, порт, сеть и "
-                   @"брандмауэр.";
+            return RDPMacLocalizedString(@"Не удалось подключиться к серверу. Проверьте адрес, порт, сеть и брандмауэр.");
         case FREERDP_ERROR_TLS_CONNECT_FAILED:
-            return @"Ошибка TLS. Сертификат сервера не принят или шифрование недоступно.";
+            return RDPMacLocalizedString(@"Ошибка TLS. Сертификат сервера не принят или шифрование недоступно.");
         case FREERDP_ERROR_SECURITY_NEGO_CONNECT_FAILED:
-            return @"Не удалось согласовать параметры безопасности (NLA/TLS).";
+            return RDPMacLocalizedString(@"Не удалось согласовать параметры безопасности (NLA/TLS).");
         case FREERDP_ERROR_AUTHENTICATION_FAILED:
-            return @"Ошибка аутентификации NLA/CredSSP. Проверьте домен, логин и пароль.";
+            return RDPMacLocalizedString(@"Ошибка аутентификации NLA/CredSSP. Проверьте домен, логин и пароль.");
         case FREERDP_ERROR_CONNECT_LOGON_FAILURE:
         case FREERDP_ERROR_CONNECT_WRONG_PASSWORD:
-            return @"Неверное имя пользователя или пароль.";
+            return RDPMacLocalizedString(@"Неверное имя пользователя или пароль.");
         case FREERDP_ERROR_CONNECT_ACCOUNT_LOCKED_OUT:
-            return @"Учётная запись заблокирована на сервере.";
+            return RDPMacLocalizedString(@"Учётная запись заблокирована на сервере.");
         case FREERDP_ERROR_CONNECT_ACCOUNT_DISABLED:
-            return @"Учётная запись отключена на сервере.";
+            return RDPMacLocalizedString(@"Учётная запись отключена на сервере.");
         case FREERDP_ERROR_CONNECT_ACCOUNT_EXPIRED:
-            return @"Срок действия учётной записи истёк.";
+            return RDPMacLocalizedString(@"Срок действия учётной записи истёк.");
         case FREERDP_ERROR_CONNECT_PASSWORD_EXPIRED:
         case FREERDP_ERROR_CONNECT_PASSWORD_CERTAINLY_EXPIRED:
-            return @"Срок действия пароля истёк. Смените пароль на сервере.";
+            return RDPMacLocalizedString(@"Срок действия пароля истёк. Смените пароль на сервере.");
         case FREERDP_ERROR_CONNECT_PASSWORD_MUST_CHANGE:
-            return @"Сервер требует сменить пароль при входе.";
+            return RDPMacLocalizedString(@"Сервер требует сменить пароль при входе.");
         case FREERDP_ERROR_CONNECT_ACCESS_DENIED:
         case FREERDP_ERROR_INSUFFICIENT_PRIVILEGES:
-            return @"Доступ запрещён. У пользователя нет права на интерактивный вход.";
+            return RDPMacLocalizedString(@"Доступ запрещён. У пользователя нет права на интерактивный вход.");
         case FREERDP_ERROR_CONNECT_ACCOUNT_RESTRICTION:
-            return @"Ограничение учётной записи: вход с этого клиента запрещён.";
+            return RDPMacLocalizedString(@"Ограничение учётной записи: вход с этого клиента запрещён.");
         case FREERDP_ERROR_CONNECT_LOGON_TYPE_NOT_GRANTED:
-            return @"Тип входа не разрешён для этой учётной записи.";
+            return RDPMacLocalizedString(@"Тип входа не разрешён для этой учётной записи.");
         case FREERDP_ERROR_CONNECT_NO_OR_MISSING_CREDENTIALS:
-            return @"Не заданы учётные данные. Введите пользователя и пароль.";
+            return RDPMacLocalizedString(@"Не заданы учётные данные. Введите пользователя и пароль.");
         case FREERDP_ERROR_CONNECT_CANCELLED:
-            return @"Подключение отменено.";
+            return RDPMacLocalizedString(@"Подключение отменено.");
         case FREERDP_ERROR_CONNECT_ACTIVATION_TIMEOUT:
-            return @"Сервер не ответил вовремя (тайм-аут).";
+            return RDPMacLocalizedString(@"Сервер не ответил вовремя (тайм-аут).");
         case FREERDP_ERROR_CONNECT_TARGET_BOOTING:
-            return @"Удалённый компьютер ещё загружается. Повторите попытку позже.";
+            return RDPMacLocalizedString(@"Удалённый компьютер ещё загружается. Повторите попытку позже.");
         default:
             break;
     }
 
     const char *text = freerdp_get_last_error_string(code);
     if (text && text[0] != '\0')
-        return [NSString stringWithFormat:@"Ошибка FreeRDP: %s (код 0x%08X)", text, code];
-    return [NSString stringWithFormat:@"Ошибка FreeRDP (код 0x%08X)", code];
+        return [NSString stringWithFormat:RDPMacLocalizedString(@"Ошибка FreeRDP: %s (код 0x%08X)"), text, code];
+    return [NSString stringWithFormat:RDPMacLocalizedString(@"Ошибка FreeRDP (код 0x%08X)"), code];
 }
 
 static NSString *RDPMacTakeString(char *value)
@@ -124,10 +123,9 @@ static RDPMacCertificateInfo *RDPMacCertificateInfoFromPEM(NSData *pem, NSString
         info.issuer = @"—";
     if (info.fingerprintSHA256.length == 0)
         info.fingerprintSHA256 = @"—";
-    info.details = [NSString stringWithFormat:@"Сервер: %@:%ld\nСубъект: %@\nИздатель: %@\n"
-                                              @"SHA-256: %@\nСертификат изменён: %@",
+    info.details = [NSString stringWithFormat:RDPMacLocalizedString(@"Сервер: %@:%ld\nСубъект: %@\nИздатель: %@\nSHA-256: %@\nСертификат изменён: %@"),
                                               host, (long)port, info.subject, info.issuer,
-                                              info.fingerprintSHA256, changed ? @"да" : @"нет"];
+                                              info.fingerprintSHA256, changed ? RDPMacLocalizedString(@"да") : RDPMacLocalizedString(@"нет")];
     return info;
 }
 
@@ -468,7 +466,7 @@ static void rdp_channel_connected(void *context, const ChannelConnectedEventArgs
         ctx->disp = (DispClientContext *)e->pInterface;
         RDPMacClient *owner = ctx->owner;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [owner logMessage:@"DisplayControl: канал изменения разрешения подключён" level:0];
+            [owner logMessage:RDPMacLocalizedString(@"DisplayControl: канал изменения разрешения подключён") level:0];
         });
     }
 }
@@ -661,7 +659,7 @@ static int rdp_logon_error_info(freerdp *instance, UINT32 data, UINT32 type)
     RDPMacClient *owner = RDPMacOwner(instance ? instance->context : NULL);
     const char *dataText = freerdp_get_logon_error_info_data(data);
     const char *typeText = freerdp_get_logon_error_info_type(type);
-    NSString *message = [NSString stringWithFormat:@"Сервер: %s (%s)",
+    NSString *message = [NSString stringWithFormat:RDPMacLocalizedString(@"Сервер: %s (%s)"),
                                                    dataText ? dataText : "—",
                                                    typeText ? typeText : "—"];
     [owner logMessage:message level:2];
@@ -743,8 +741,7 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
     NSString *issuerString = issuer ? [NSString stringWithUTF8String:issuer] : @"—";
     NSString *fingerprintString =
         new_fingerprint ? [NSString stringWithUTF8String:new_fingerprint] : @"—";
-    [owner logMessage:[NSString stringWithFormat:@"TLS: сертификат изменился. Старый издатель: %s, "
-                                                @"старый отпечаток: %s",
+    [owner logMessage:[NSString stringWithFormat:RDPMacLocalizedString(@"TLS: сертификат изменился. Старый издатель: %s, старый отпечаток: %s"),
                                                 old_issuer ? old_issuer : "—",
                                                 old_fingerprint ? old_fingerprint : "—"]
                 level:1];
@@ -817,7 +814,7 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
     freerdp_client_context_free(context);
     [report appendString:@"context create/free: OK\n"];
 
-    NSString *sample = @"Привет, мир!\nHello world\n🚀 Emoji & Юникод";
+    NSString *sample = RDPMacLocalizedString(@"Привет, мир!\nHello world\n🚀 Emoji & Юникод");
     NSError *error = nil;
     NSData *unicode = RDPMacClipboardEncodeText(sample, RDPMacClipboardFormatUnicodeText, &error);
     NSString *unicodeBack = unicode
@@ -828,7 +825,7 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
                                           error.localizedDescription ?: @"mismatch"];
     [report appendFormat:@"clipboard UTF-16LE: OK (%lu bytes)\n", (unsigned long)unicode.length];
 
-    NSString *cyrillic = @"Проверка CF_TEXT: привет";
+    NSString *cyrillic = RDPMacLocalizedString(@"Проверка CF_TEXT: привет");
     NSData *ansi = RDPMacClipboardEncodeText(cyrillic, RDPMacClipboardFormatText, &error);
     NSString *ansiBack = ansi ? RDPMacClipboardDecodeText(ansi, RDPMacClipboardFormatText) : nil;
     if (![ansiBack isEqualToString:cyrillic])
@@ -929,22 +926,22 @@ static NSError *RDPMacClientError(NSString *message)
                                       [NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (trimmedHost.length == 0) {
         if (error)
-            *error = RDPMacClientError(@"Укажите адрес сервера.");
+            *error = RDPMacClientError(RDPMacLocalizedString(@"Укажите адрес сервера."));
         return NO;
     }
     if (port < 1 || port > 65535) {
         if (error)
-            *error = RDPMacClientError(@"Порт должен быть в диапазоне 1–65535.");
+            *error = RDPMacClientError(RDPMacLocalizedString(@"Порт должен быть в диапазоне 1–65535."));
         return NO;
     }
     if (_thread && !_thread.isFinished) {
         if (error)
-            *error = RDPMacClientError(@"Предыдущее подключение ещё завершается. Подождите.");
+            *error = RDPMacClientError(RDPMacLocalizedString(@"Предыдущее подключение ещё завершается. Подождите."));
         return NO;
     }
     if (_context) {
         if (error)
-            *error = RDPMacClientError(@"Внутренняя ошибка: предыдущий сеанс не освобождён.");
+            *error = RDPMacClientError(RDPMacLocalizedString(@"Внутренняя ошибка: предыдущий сеанс не освобождён."));
         return NO;
     }
 
@@ -980,14 +977,14 @@ static NSError *RDPMacClientError(NSString *message)
     RDP_CLIENT_ENTRY_POINTS entryPoints = {0};
     if (RDPMacClientEntry(&entryPoints) != 0) {
         if (error)
-            *error = RDPMacClientError(@"Не удалось инициализировать FreeRDP.");
+            *error = RDPMacClientError(RDPMacLocalizedString(@"Не удалось инициализировать FreeRDP."));
         return NO;
     }
 
     rdpContext *context = freerdp_client_context_new(&entryPoints);
     if (!context) {
         if (error)
-            *error = RDPMacClientError(@"Не удалось создать контекст FreeRDP.");
+            *error = RDPMacClientError(RDPMacLocalizedString(@"Не удалось создать контекст FreeRDP."));
         return NO;
     }
 
@@ -1076,19 +1073,18 @@ static NSError *RDPMacClientError(NSString *message)
     if (!ok) {
         freerdp_client_context_free(context);
         if (error)
-            *error = RDPMacClientError(@"Не удалось применить параметры подключения.");
+            *error = RDPMacClientError(RDPMacLocalizedString(@"Не удалось применить параметры подключения."));
         return NO;
     }
 
     _context = macContext;
     _threadFinished = dispatch_semaphore_create(0);
     [self setState:RDPMacConnectionStateConnecting
-            message:[NSString stringWithFormat:@"Подключение к %@:%ld…", trimmedHost, (long)port]];
-    [self logMessage:[NSString stringWithFormat:@"Подключение: %@:%ld, пользователь %@, домен %@, "
-                                                @"режим безопасности %ld, размер %lux%lu",
+            message:[NSString stringWithFormat:RDPMacLocalizedString(@"Подключение к %@:%ld…"), trimmedHost, (long)port]];
+    [self logMessage:[NSString stringWithFormat:RDPMacLocalizedString(@"Подключение: %@:%ld, пользователь %@, домен %@, режим безопасности %ld, размер %lux%lu"),
                                                 trimmedHost, (long)port,
-                                                username.length ? username : @"(пусто)",
-                                                domain.length ? domain : @"(пусто)",
+                                                username.length ? username : RDPMacLocalizedString(@"(пусто)"),
+                                                domain.length ? domain : RDPMacLocalizedString(@"(пусто)"),
                                                 (long)securityMode, (unsigned long)safeWidth,
                                                 (unsigned long)safeHeight]
                 level:0];
@@ -1127,8 +1123,8 @@ static NSError *RDPMacClientError(NSString *message)
     pthread_mutex_unlock(&_apiLock);
 
     [self rejectPendingCertificatePrompt];
-    [self setState:RDPMacConnectionStateDisconnecting message:@"Отключение…"];
-    [self logMessage:@"Запрошено отключение" level:0];
+    [self setState:RDPMacConnectionStateDisconnecting message:RDPMacLocalizedString(@"Отключение…")];
+    [self logMessage:RDPMacLocalizedString(@"Запрошено отключение") level:0];
 
     pthread_mutex_lock(&_apiLock);
     rdpContext *context = _context ? &_context->common.context : NULL;
@@ -1148,7 +1144,7 @@ static NSError *RDPMacClientError(NSString *message)
         pthread_mutex_unlock(&_apiLock);
 
         if (!instance) {
-            [self finishSessionWithContext:NULL error:@"Внутренняя ошибка: нет контекста FreeRDP"];
+            [self finishSessionWithContext:NULL error:RDPMacLocalizedString(@"Внутренняя ошибка: нет контекста FreeRDP")];
             return;
         }
 
@@ -1158,16 +1154,16 @@ static NSError *RDPMacClientError(NSString *message)
             _lastErrorWasTLS =
                 !_certificateRejected && errorCode == FREERDP_ERROR_TLS_CONNECT_FAILED;
             NSString *message = _certificateRejected
-                                    ? @"Сертификат сервера отклонён. Подключение отменено."
+                                    ? RDPMacLocalizedString(@"Сертификат сервера отклонён. Подключение отменено.")
                                     : RDPMacErrorText(errorCode);
-            [self logMessage:[NSString stringWithFormat:@"Ошибка подключения: %@", message] level:2];
+            [self logMessage:[NSString stringWithFormat:RDPMacLocalizedString(@"Ошибка подключения: %@"), message] level:2];
             freerdp_disconnect(instance);
             [self finishSessionWithContext:instance->context error:message];
             return;
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self setState:RDPMacConnectionStateConnected message:@"Подключено"];
+            [self setState:RDPMacConnectionStateConnected message:RDPMacLocalizedString(@"Подключено")];
             id<RDPMacClientDelegate> delegate = self.delegate;
             if ([delegate respondsToSelector:@selector(rdpClientDidConnect:)])
                 [delegate rdpClientDidConnect:self];
@@ -1180,26 +1176,26 @@ static NSError *RDPMacClientError(NSString *message)
                                                     MAXIMUM_WAIT_OBJECTS);
             if (count == 0) {
                 errorCode = freerdp_get_last_error(instance->context);
-                [self logMessage:@"Основной цикл: не удалось получить события FreeRDP" level:2];
+                [self logMessage:RDPMacLocalizedString(@"Основной цикл: не удалось получить события FreeRDP") level:2];
                 break;
             }
 
             DWORD status = WaitForMultipleObjects(count, handles, FALSE, 500);
             if (status == WAIT_FAILED) {
                 errorCode = freerdp_get_last_error(instance->context);
-                [self logMessage:@"Основной цикл: WaitForMultipleObjects завершился ошибкой" level:2];
+                [self logMessage:RDPMacLocalizedString(@"Основной цикл: WaitForMultipleObjects завершился ошибкой") level:2];
                 break;
             }
             if (!freerdp_check_event_handles(instance->context)) {
                 errorCode = freerdp_get_last_error(instance->context);
                 if (errorCode == FREERDP_ERROR_SUCCESS)
-                    [self logMessage:@"Основной цикл: обработка событий FreeRDP не удалась" level:2];
+                    [self logMessage:RDPMacLocalizedString(@"Основной цикл: обработка событий FreeRDP не удалась") level:2];
                 break;
             }
         }
 
         errorCode = freerdp_get_last_error(instance->context);
-        [self logMessage:@"Отключение сеанса RDP" level:0];
+        [self logMessage:RDPMacLocalizedString(@"Отключение сеанса RDP") level:0];
         freerdp_disconnect(instance);
 
         NSString *message = nil;
@@ -1240,7 +1236,7 @@ static NSError *RDPMacClientError(NSString *message)
             [self logMessage:error level:2];
         } else {
             self->_lastErrorText = nil;
-            [self setState:RDPMacConnectionStateDisconnected message:@"Сеанс завершён"];
+            [self setState:RDPMacConnectionStateDisconnected message:RDPMacLocalizedString(@"Сеанс завершён")];
         }
         if (self->_deallocating)
             return;
@@ -1274,10 +1270,9 @@ static NSError *RDPMacClientError(NSString *message)
     info.issuer = issuer.length ? issuer : @"—";
     info.fingerprintSHA256 = fingerprint.length ? fingerprint : @"—";
     info.changed = changed;
-    info.details = [NSString stringWithFormat:@"Сервер: %@:%ld\nСубъект: %@\nИздатель: %@\n"
-                                              @"Отпечаток: %@\nСертификат изменён: %@",
+    info.details = [NSString stringWithFormat:RDPMacLocalizedString(@"Сервер: %@:%ld\nСубъект: %@\nИздатель: %@\nОтпечаток: %@\nСертификат изменён: %@"),
                                               hostname, (long)port, info.subject, info.issuer,
-                                              info.fingerprintSHA256, changed ? @"да" : @"нет"];
+                                              info.fingerprintSHA256, changed ? RDPMacLocalizedString(@"да") : RDPMacLocalizedString(@"нет")];
     return [self decisionForCertificateInfo:info];
 }
 
@@ -1288,8 +1283,7 @@ static NSError *RDPMacClientError(NSString *message)
         return 0;
     }
 
-    [self logMessage:[NSString stringWithFormat:@"TLS: требуется подтверждение сертификата %@:%ld "
-                                                @"(SHA-256 %@)",
+    [self logMessage:[NSString stringWithFormat:RDPMacLocalizedString(@"TLS: требуется подтверждение сертификата %@:%ld (SHA-256 %@)"),
                                                 info.hostname, (long)info.port,
                                                 info.fingerprintSHA256]
                 level:1];
@@ -1318,7 +1312,7 @@ static NSError *RDPMacClientError(NSString *message)
                                        dispatch_semaphore_signal(semaphore);
                                    }];
         } else {
-            [self logMessage:@"Нет обработчика подтверждения сертификата — отказ" level:2];
+            [self logMessage:RDPMacLocalizedString(@"Нет обработчика подтверждения сертификата — отказ") level:2];
             dispatch_semaphore_signal(semaphore);
         }
     });
@@ -1335,21 +1329,21 @@ static NSError *RDPMacClientError(NSString *message)
 
     if (waitResult != 0) {
         _certificateRejected = YES;
-        [self logMessage:@"Истекло время ожидания подтверждения сертификата — отказ" level:2];
+        [self logMessage:RDPMacLocalizedString(@"Истекло время ожидания подтверждения сертификата — отказ") level:2];
         return 0;
     }
 
     switch (decision) {
         case RDPMacCertificateDecisionAcceptAndRemember:
-            [self logMessage:@"Сертификат принят и сохранён для этого сервера" level:1];
+            [self logMessage:RDPMacLocalizedString(@"Сертификат принят и сохранён для этого сервера") level:1];
             return 1;
         case RDPMacCertificateDecisionAcceptOnce:
-            [self logMessage:@"Сертификат принят только для текущего сеанса" level:1];
+            [self logMessage:RDPMacLocalizedString(@"Сертификат принят только для текущего сеанса") level:1];
             return 2;
         case RDPMacCertificateDecisionReject:
         default:
             _certificateRejected = YES;
-            [self logMessage:@"Сертификат отклонён пользователем" level:1];
+            [self logMessage:RDPMacLocalizedString(@"Сертификат отклонён пользователем") level:1];
             return 0;
     }
 }
@@ -1370,7 +1364,7 @@ static NSError *RDPMacClientError(NSString *message)
         uint8_t *newFrame = (uint8_t *)realloc(_frame, needed);
         if (!newFrame) {
             pthread_mutex_unlock(&_frameLock);
-            [self logMessage:@"Недостаточно памяти для буфера кадра" level:2];
+            [self logMessage:RDPMacLocalizedString(@"Недостаточно памяти для буфера кадра") level:2];
             return;
         }
         _frame = newFrame;
@@ -1412,7 +1406,7 @@ static NSError *RDPMacClientError(NSString *message)
 - (void)framebufferConfigureWithWidth:(size_t)width height:(size_t)height
 {
     [self allocateFrameWithWidth:width height:height];
-    [self logMessage:[NSString stringWithFormat:@"Удалённый рабочий стол: %lux%lu, формат BGRX32",
+    [self logMessage:[NSString stringWithFormat:RDPMacLocalizedString(@"Удалённый рабочий стол: %lux%lu, формат BGRX32"),
                                                 (unsigned long)width, (unsigned long)height]
                 level:0];
     [self notifyFrameUpdatedWithResize:YES];
@@ -1421,7 +1415,7 @@ static NSError *RDPMacClientError(NSString *message)
 - (void)framebufferDidResizeWidth:(size_t)width height:(size_t)height
 {
     [self allocateFrameWithWidth:width height:height];
-    [self logMessage:[NSString stringWithFormat:@"Размер удалённого рабочего стола изменён: %lux%lu",
+    [self logMessage:[NSString stringWithFormat:RDPMacLocalizedString(@"Размер удалённого рабочего стола изменён: %lux%lu"),
                                                 (unsigned long)width, (unsigned long)height]
                 level:0];
     [self notifyFrameUpdatedWithResize:YES];
@@ -1770,7 +1764,7 @@ static int RDPMacClampCoordinate(int value, size_t limit)
     RDPMacSendScancode(input, RDP_SCANCODE_LCONTROL, FALSE);
     _sentModifiers = 0;
     pthread_mutex_unlock(&_apiLock);
-    [self logMessage:@"Отправлена комбинация Ctrl+Alt+Delete (Ctrl+Alt+End)" level:0];
+    [self logMessage:RDPMacLocalizedString(@"Отправлена комбинация Ctrl+Alt+Delete (Ctrl+Alt+End)") level:0];
 }
 
 - (BOOL)requestDesktopSize:(NSUInteger)width height:(NSUInteger)height
@@ -1784,7 +1778,7 @@ static int RDPMacClampCoordinate(int value, size_t limit)
     if (_state != RDPMacConnectionStateConnected || !_context || !_context->disp ||
         !_context->disp->SendMonitorLayout) {
         pthread_mutex_unlock(&_apiLock);
-        [self logMessage:@"DisplayControl недоступен: изменение размера не отправлено" level:1];
+        [self logMessage:RDPMacLocalizedString(@"DisplayControl недоступен: изменение размера не отправлено") level:1];
         return NO;
     }
 
@@ -1801,13 +1795,12 @@ static int RDPMacClampCoordinate(int value, size_t limit)
     const UINT rc = _context->disp->SendMonitorLayout(_context->disp, 1, &layout);
     pthread_mutex_unlock(&_apiLock);
     if (rc != CHANNEL_RC_OK) {
-        [self logMessage:[NSString stringWithFormat:@"DisplayControl: запрос размера не принят "
-                                                    @"(0x%08X)",
+        [self logMessage:[NSString stringWithFormat:RDPMacLocalizedString(@"DisplayControl: запрос размера не принят (0x%08X)"),
                                                     rc]
                     level:1];
         return NO;
     }
-    [self logMessage:[NSString stringWithFormat:@"DisplayControl: запрошен размер %lux%lu",
+    [self logMessage:[NSString stringWithFormat:RDPMacLocalizedString(@"DisplayControl: запрошен размер %lux%lu"),
                                                 (unsigned long)safeWidth,
                                                 (unsigned long)safeHeight]
                 level:0];

@@ -15,13 +15,13 @@ final class SessionView: NSView {
     private let connectionLabel = UI.label("", size: 13, weight: .medium)
     private let detailsLabel = UI.label("", size: 11, color: .secondaryLabelColor)
     private let resolutionLabel = UI.label("", size: 11, color: .secondaryLabelColor)
-    private let clipboardLabel = UI.label("Буфер: —", size: 11, color: .secondaryLabelColor)
+    private let clipboardLabel = UI.label(L("Буфер: —"), size: 11, color: .secondaryLabelColor)
     private let overlay = NSView()
     private let spinner = NSProgressIndicator()
     private let overlayTitle = UI.label("", size: 18, weight: .semibold)
     private let overlayDetail = UI.label("", size: 12, color: .secondaryLabelColor, lines: 6)
-    private let retryButton = UI.button("Переподключиться", target: nil, action: nil)
-    private let settingsButton = UI.button("Изменить параметры", target: nil, action: nil)
+    private let retryButton = UI.button(L("Переподключиться"), target: nil, action: nil)
+    private let settingsButton = UI.button(L("Изменить параметры"), target: nil, action: nil)
     private var toolbarHeight: NSLayoutConstraint!
 
     override init(frame frameRect: NSRect) {
@@ -43,14 +43,19 @@ final class SessionView: NSView {
         toolbar.layer?.masksToBounds = true
         toolbar.translatesAutoresizingMaskIntoConstraints = false
 
-        let disconnect = UI.button("Отключить", target: self, action: #selector(disconnectAction(_:)))
-        let ctrlAltDel = UI.button("Ctrl+Alt+Del", target: self, action: #selector(ctrlAltDelAction(_:)))
-        let fullscreen = UI.button("Во весь экран", target: self, action: #selector(fullscreenAction(_:)))
-        let diagnostics = UI.button("Буфер обмена…", target: self,
+        let disconnect = UI.button(L("Отключить"), target: self, action: #selector(disconnectAction(_:)))
+        let diagnostics = UI.button(L("Буфер обмена…"), target: self,
                                     action: #selector(diagnosticsAction(_:)))
+        let more = NSPopUpButton(frame: .zero, pullsDown: true)
+        more.addItem(withTitle: L("Действия"))
+        for (title, action) in [("Ctrl+Alt+Del", #selector(ctrlAltDelAction(_:))),
+                                (L("Во весь экран"), #selector(fullscreenAction(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            more.menu?.addItem(item)
+        }
         let left = UI.hStack([statusDot, connectionLabel, detailsLabel], spacing: 8)
-        let right = UI.hStack([clipboardLabel, resolutionLabel, diagnostics, ctrlAltDel, fullscreen,
-                               disconnect], spacing: 8)
+        let right = UI.hStack([clipboardLabel, resolutionLabel, diagnostics, more, disconnect], spacing: 8)
         let bar = UI.hStack([left, NSView(), right], spacing: 12)
         bar.translatesAutoresizingMaskIntoConstraints = false
         toolbar.addSubview(bar)
@@ -110,9 +115,9 @@ final class SessionView: NSView {
 
     func configure(host: String, port: Int) {
         connectionLabel.stringValue = "\(host):\(port)"
-        detailsLabel.stringValue = "подключение"
+        detailsLabel.stringValue = L("подключение")
         resolutionLabel.stringValue = ""
-        clipboardLabel.stringValue = "Буфер: ожидание"
+        clipboardLabel.stringValue = L("Буфер: ожидание")
         clipboardLabel.textColor = .secondaryLabelColor
         statusDot.layer?.backgroundColor = NSColor.systemOrange.cgColor
     }
@@ -120,12 +125,12 @@ final class SessionView: NSView {
     func showConnecting(_ message: String) {
         overlay.isHidden = false
         spinner.startAnimation(nil)
-        overlayTitle.stringValue = "Подключение…"
+        overlayTitle.stringValue = L("Подключение…")
         overlayDetail.stringValue = message
         retryButton.isHidden = true
         settingsButton.isHidden = true
         statusDot.layer?.backgroundColor = NSColor.systemOrange.cgColor
-        detailsLabel.stringValue = "подключение"
+        detailsLabel.stringValue = L("подключение")
     }
 
     func showConnected(width: Int, height: Int) {
@@ -134,7 +139,7 @@ final class SessionView: NSView {
         retryButton.isHidden = true
         settingsButton.isHidden = true
         statusDot.layer?.backgroundColor = NSColor.systemGreen.cgColor
-        detailsLabel.stringValue = "подключено"
+        detailsLabel.stringValue = L("подключено")
         resolutionLabel.stringValue = "\(width) × \(height)"
         window?.makeFirstResponder(rdpView)
     }
@@ -142,13 +147,13 @@ final class SessionView: NSView {
     func showDisconnected(message: String, isError: Bool) {
         overlay.isHidden = false
         spinner.stopAnimation(nil)
-        overlayTitle.stringValue = isError ? "Не удалось подключиться" : "Сеанс завершён"
+        overlayTitle.stringValue = isError ? L("Не удалось подключиться") : L("Сеанс завершён")
         overlayDetail.stringValue = message
         retryButton.isHidden = false
         settingsButton.isHidden = false
         statusDot.layer?.backgroundColor =
             (isError ? NSColor.systemRed : NSColor.systemGray).cgColor
-        detailsLabel.stringValue = isError ? "ошибка" : "отключено"
+        detailsLabel.stringValue = isError ? L("ошибка") : L("отключено")
         resolutionLabel.stringValue = ""
         window?.makeFirstResponder(settingsButton)
     }
@@ -161,22 +166,25 @@ final class SessionView: NSView {
         let text: String
         let color: NSColor
         if !diagnostics.enabled {
-            text = "Буфер: выключен"
+            text = L("Буфер: выключен")
             color = .secondaryLabelColor
         } else if !diagnostics.channelConnected {
-            text = "Буфер: канал не подключён"
+            text = L("Буфер: канал не подключён")
             color = .systemOrange
         } else if !diagnostics.monitorReady {
-            text = "Буфер: согласование"
+            text = L("Буфер: согласование")
             color = .systemOrange
-        } else if diagnostics.stateDescription.contains("приостановлен") {
-            text = "Буфер: сессия не активна"
+        } else if diagnostics.stateDescription.contains(L("приостановлен")) {
+            text = L("Буфер: сессия не активна")
             color = .secondaryLabelColor
+        } else if diagnostics.requiresReconnect {
+            text = L("Буфер: нужно переподключение")
+            color = .systemOrange
         } else if diagnostics.failureCount > 0 && diagnostics.lastError != nil {
-            text = "Буфер: готов, были ошибки"
+            text = L("Буфер: готов, были ошибки")
             color = .systemOrange
         } else {
-            text = "Буфер: готов (CF_UNICODETEXT)"
+            text = L("Буфер: готов (CF_UNICODETEXT)")
             color = .systemGreen
         }
         clipboardLabel.stringValue = text

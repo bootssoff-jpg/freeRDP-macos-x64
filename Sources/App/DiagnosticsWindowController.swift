@@ -4,22 +4,25 @@ final class DiagnosticsWindowController: NSWindowController {
     var onSendLocal: (() -> Void)?
     var onRequestRemote: (() -> Void)?
     var onResync: (() -> Void)?
+    var onReconnect: (() -> Void)?
     var onExportLog: (() -> Void)?
 
     private let textView = NSTextView()
-    private let sendButton = UI.button("Отправить Mac → Windows", target: nil, action: nil)
-    private let requestButton = UI.button("Запросить Windows → Mac", target: nil, action: nil)
-    private let resyncButton = UI.button("Полная ресинхронизация", target: nil, action: nil)
-    private let copyButton = UI.button("Копировать отчёт", target: nil, action: nil)
-    private let exportButton = UI.button("Экспорт журнала…", target: nil, action: nil)
+    private let sendButton = UI.button(L("Отправить Mac → Windows"), target: nil, action: nil)
+    private let requestButton = UI.button(L("Запросить Windows → Mac"), target: nil, action: nil)
+    private let resyncButton = UI.button(L("Полная ресинхронизация"), target: nil, action: nil)
+    private let copyButton = UI.button(L("Копировать отчёт"), target: nil, action: nil)
+    private let exportButton = UI.button(L("Экспорт журнала…"), target: nil, action: nil)
+    private let reconnectButton = UI.button(L("Переподключиться"), target: nil, action: nil)
     private var lastReport = ""
+    private var recoveryAvailable = false
 
     convenience init() {
         let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 620),
                               styleMask: [.titled, .closable, .resizable, .miniaturizable],
                               backing: .buffered,
                               defer: false)
-        window.title = "Диагностика буфера обмена"
+        window.title = L("Диагностика буфера обмена")
         window.minSize = NSSize(width: 640, height: 480)
         window.isReleasedWhenClosed = false
         window.center()
@@ -56,8 +59,11 @@ final class DiagnosticsWindowController: NSWindowController {
         exportButton.target = self
         exportButton.action = #selector(exportLog(_:))
 
+        reconnectButton.target = self
+        reconnectButton.action = #selector(reconnect(_:))
+        reconnectButton.isHidden = true
         let firstRow = UI.hStack([sendButton, requestButton, resyncButton], spacing: 8)
-        let secondRow = UI.hStack([copyButton, exportButton], spacing: 8)
+        let secondRow = UI.hStack([copyButton, exportButton, reconnectButton], spacing: 8)
         let buttons = UI.vStack([firstRow, secondRow], spacing: 8)
         buttons.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(scroll)
@@ -81,40 +87,45 @@ final class DiagnosticsWindowController: NSWindowController {
             ? "—"
             : diagnostics.remoteFormats.joined(separator: ", ")
         var lines: [String] = []
-        lines.append("Сеанс: \(session)")
+        lines.append(L("Сеанс: %@", String(describing: session)))
         lines.append("")
-        lines.append("CLIPRDR включён: \(diagnostics.enabled ? "да" : "нет")")
-        lines.append("Канал подключён: \(diagnostics.channelConnected ? "да" : "нет")")
-        lines.append("Monitor Ready: \(diagnostics.monitorReady ? "да" : "нет")")
-        lines.append("Состояние: \(diagnostics.stateDescription)")
-        lines.append("Локальные форматы: \(diagnostics.localFormats.joined(separator: ", "))")
-        lines.append("Форматы Windows: \(formats)")
+        lines.append(L("CLIPRDR включён: %@", String(describing: diagnostics.enabled ? L("да") : L("нет"))))
+        lines.append(L("Канал подключён: %@", String(describing: diagnostics.channelConnected ? L("да") : L("нет"))))
+        lines.append("Monitor Ready: \(diagnostics.monitorReady ? L("да") : L("нет"))")
+        lines.append(L("Состояние: %@", String(describing: diagnostics.stateDescription)))
+        lines.append(L("Локальные форматы: %@", String(describing: diagnostics.localFormats.joined(separator: ", "))))
+        lines.append(L("Форматы Windows: %@", String(describing: formats)))
         lines.append("")
-        lines.append("Объявлений Mac → Windows: \(diagnostics.localAdvertiseCount)")
-        lines.append("Объявлений Windows → Mac: \(diagnostics.remoteAdvertiseCount)")
-        lines.append("Отправлено пакетов: \(diagnostics.sendCount)")
-        lines.append("Получено пакетов: \(diagnostics.receiveCount)")
-        lines.append("Ошибок: \(diagnostics.failureCount)")
+        lines.append(L("Объявлений Mac → Windows: %@", String(describing: diagnostics.localAdvertiseCount)))
+        lines.append(L("Объявлений Windows → Mac: %@", String(describing: diagnostics.remoteAdvertiseCount)))
+        lines.append(L("Отправлено пакетов: %@", String(describing: diagnostics.sendCount)))
+        lines.append(L("Получено пакетов: %@", String(describing: diagnostics.receiveCount)))
+        lines.append(L("Ошибок: %@", String(describing: diagnostics.failureCount)))
         lines.append("")
-        lines.append("Последнее объявление Mac: \(diagnostics.lastLocalAdvertise ?? "—")")
-        lines.append("Последнее объявление Windows: \(diagnostics.lastRemoteAdvertise ?? "—")")
-        lines.append("Последняя отправка: \(diagnostics.lastLocalSend ?? "—")")
-        lines.append("Последнее получение: \(diagnostics.lastRemoteReceive ?? "—")")
-        lines.append("Ожидание ответа: \(diagnostics.pendingRequest ?? "—")")
-        lines.append("Последняя ошибка: \(diagnostics.lastError ?? "—")")
+        lines.append(L("Последнее объявление Mac: %@", String(describing: diagnostics.lastLocalAdvertise ?? "—")))
+        lines.append(L("Последнее объявление Windows: %@", String(describing: diagnostics.lastRemoteAdvertise ?? "—")))
+        lines.append(L("Последняя отправка: %@", String(describing: diagnostics.lastLocalSend ?? "—")))
+        lines.append(L("Последнее получение: %@", String(describing: diagnostics.lastRemoteReceive ?? "—")))
+        lines.append(L("Ожидание ответа: %@", String(describing: diagnostics.pendingRequest ?? "—")))
+        lines.append(L("Последняя ошибка: %@", String(describing: diagnostics.lastError ?? "—")))
         lines.append("")
-        lines.append("Поддерживается: текст CF_UNICODETEXT (UTF-16LE) и CF_TEXT (best effort).")
-        lines.append("Изображения, файлы и перенаправление папок не поддерживаются.")
-        lines.append("Содержимое буфера обмена в диагностику и журнал не записывается.")
+        lines.append(L("Поддерживается: текст CF_UNICODETEXT (UTF-16LE) и CF_TEXT (best effort)."))
+        lines.append(L("Изображения, файлы и перенаправление папок не поддерживаются."))
+        lines.append(L("Содержимое буфера обмена в диагностику и журнал не записывается."))
         lastReport = lines.joined(separator: "\n")
         textView.string = lastReport
 
         sendButton.isEnabled = enabled && diagnostics.monitorReady
         requestButton.isEnabled = enabled && diagnostics.monitorReady
-        resyncButton.isEnabled = enabled && diagnostics.monitorReady
+        resyncButton.isEnabled = enabled && diagnostics.monitorReady && !diagnostics.requiresReconnect
+        requestButton.isEnabled = enabled && diagnostics.monitorReady && !diagnostics.requiresReconnect
+        recoveryAvailable = diagnostics.requiresReconnect
+        reconnectButton.isHidden = !recoveryAvailable
+        reconnectButton.isEnabled = recoveryAvailable
     }
 
     func setSessionActive(_ active: Bool) {
+        reconnectButton.isEnabled = active && recoveryAvailable
         if !active {
             sendButton.isEnabled = false
             requestButton.isEnabled = false
@@ -122,6 +133,7 @@ final class DiagnosticsWindowController: NSWindowController {
         }
     }
 
+    @objc private func reconnect(_ sender: Any?) { onReconnect?() }
     @objc private func sendLocal(_ sender: Any?) { onSendLocal?() }
     @objc private func requestRemote(_ sender: Any?) { onRequestRemote?() }
     @objc private func resync(_ sender: Any?) { onResync?() }

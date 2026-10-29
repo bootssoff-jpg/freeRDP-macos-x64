@@ -64,11 +64,46 @@ let data = try JSONEncoder().encode(a)
 var old = try JSONSerialization.jsonObject(with: data) as! [String: Any]
 old.removeValue(forKey: "group")
 let restored = try JSONDecoder().decode(Profile.self, from: JSONSerialization.data(withJSONObject: old))
-expect(restored.groupName == "Без группы", "existing profiles without group still decode")
+expect(restored.groupName == L("Без группы"), "existing profiles without group still decode")
 let accountA = KeychainStore.account(host: "server", port: 3389, domain: "EXAMPLE", username: "alice")
 let accountB = KeychainStore.account(host: "server", port: 3389, domain: "EXAMPLE", username: "bob")
 expect(accountA != accountB, "different accounts on one server use different Keychain keys")
 let encoded = String(data: try JSONEncoder().encode(a), encoding: .utf8) ?? ""
 expect(!encoded.contains("\"password\":"), "profile JSON contains no password value field")
+let collapsed = ConnectionsWindowController.groupedRows(profiles: [a,b,c], query: "", collapsedGroups: ["Work"])
+expect(collapsed.count == 3, "collapsed group keeps its header and hides its profiles")
+expect(ConnectionsWindowController.groupedRows(profiles: [a,b,c], query: "Work", collapsedGroups: ["Work"]).count == 3,
+       "search expands matching profiles even when their group is collapsed")
+let language = ProcessInfo.processInfo.environment["RDPMAC_LANGUAGE"] ?? "ru"
+expect(L("Подключиться") == (language == "en" ? "Connect" : "Подключиться"), "selected UI language loads from bundled resources")
+expect(L("Активных: %@", "2") == (language == "en" ? "Active: 2" : "Активных: 2"), "localized dynamic status preserves its argument")
+expect(RDPMacLocalizedString("Неверное имя пользователя или пароль.") ==
+       (language == "en" ? "Incorrect user name or password." : "Неверное имя пользователя или пароль."),
+       "Objective-C errors use the same language as Swift")
+expect(RDPMacLocalizedString("missing-localization-key") == "missing-localization-key", "missing key falls back safely")
+let form = ConnectFormView()
+var safeProfile = Profile(); safeProfile.host = "demo.invalid"; safeProfile.username = "demo"
+form.applyProfile(safeProfile, password: nil)
+expect(form.makeProfile(name: "Demo").host == "demo.invalid", "localized form preserves profile values")
+let manager = ConnectionsWindowController()
+manager.profilesProvider = { [a,b,c] }
+manager.reload()
+expect(manager.rows.count == 5, "manager renders shared demo profiles without persistence")
+manager.window?.close()
+let resourceRoot = Bundle.main.resourceURL!
+func stringsTable(_ language: String) throws -> [String: String] {
+    let data = try Data(contentsOf: resourceRoot.appendingPathComponent("\(language).lproj/Localizable.strings"))
+    return try PropertyListSerialization.propertyList(from: data, format: nil) as! [String: String]
+}
+let english = try stringsTable("en")
+let russian = try stringsTable("ru")
+expect(Set(english.keys) == Set(russian.keys), "EN/RU contain exactly the same localization keys")
+let formatPattern = try NSRegularExpression(pattern: "%([0-9]+\\$)?[0-9.]*[a-zA-Z@]+")
+func formatTokens(_ value: String) -> [String] {
+    let range = NSRange(value.startIndex..., in: value)
+    return formatPattern.matches(in: value, range: range).map { (value as NSString).substring(with: $0.range) }
+}
+expect(english.allSatisfy { formatTokens($0.key) == formatTokens($0.value) },
+       "all English format strings preserve their argument types and order")
 print(failures == 0 ? "RESULT: OK" : "RESULT: \(failures) FAILURES")
 exit(failures == 0 ? 0 : 1)

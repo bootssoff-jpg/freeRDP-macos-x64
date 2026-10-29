@@ -83,11 +83,7 @@ final class LogStore {
     }
 
     func exportText() -> String {
-        let header = """
-        RDP Mac — журнал подключений
-        Содержимое буфера обмена и пароли в журнал не записываются.
-
-        """
+        let header = L("RDP Mac — журнал подключений\nСодержимое буфера обмена и пароли в журнал не записываются.")
         return header + text() + "\n"
     }
 

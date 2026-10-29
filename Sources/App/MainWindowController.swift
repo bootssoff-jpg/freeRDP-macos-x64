@@ -15,6 +15,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     private var sessionActive = false
     private var connected = false
     private var pendingShowSettings = false
+    private var pendingReconnect = false
     private var legacyPromptShown = false
     private var didInitialProfileSelection = false
     private var currentHost = ""
@@ -63,7 +64,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         sessionView.onRetry = { [weak self] in self?.retryConnection() }
         sessionView.onSettings = { [weak self] in self?.showSettings(nil) }
 
-        LogStore.shared.append("Сессия создана. Профилей: \(profileStore.profiles.count)", level: 0)
+        LogStore.shared.append(L("Сессия создана. Профилей: %@", String(describing: profileStore.profiles.count)), level: 0)
     }
 
     private func showForm(message: String?, isError: Bool) {
@@ -88,7 +89,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         if let message {
             formView.showMessage(message, isError: isError)
         } else {
-            formView.showMessage("Готово к подключению. Пароль вводится здесь и не пишется в журнал.",
+            formView.showMessage(L("Готово к подключению. Пароль вводится здесь и не пишется в журнал."),
                                  isError: false)
         }
         formView.focusHost()
@@ -120,10 +121,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
                                             username: request.username)
         if request.savePassword, !request.password.isEmpty {
             if KeychainStore.save(password: request.password, account: account) {
-                LogStore.shared.append("Пароль сохранён в Keychain для \(request.host):\(request.port)",
+                LogStore.shared.append(L("Пароль сохранён в Keychain для %@:%@", String(describing: request.host), String(describing: request.port)),
                                        level: 0)
             } else {
-                LogStore.shared.append("Не удалось сохранить пароль в Keychain", level: 1)
+                LogStore.shared.append(L("Не удалось сохранить пароль в Keychain"), level: 1)
             }
         } else {
             // An empty password must not create an auto-connect entry, and
@@ -138,6 +139,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         let scale = window.backingScaleFactor
         let size = request.resolution.size(for: content, backingScale: scale)
 
+        client?.delegate = nil
         let newClient = RDPMacClient()
         newClient.delegate = self
         // Do not let a background window touch the shared pasteboard even for
@@ -177,17 +179,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         NotificationCenter.default.post(name: Self.sessionDidChange, object: self)
         clipboardDiagnostics = newClient.clipboardDiagnostics()
         showSessionView()
-        sessionView.showConnecting("Сервер \(request.host):\(request.port), пользователь "
+        sessionView.showConnecting(L("Сервер %@:%@, пользователь ", String(describing: request.host), String(describing: request.port))
                                    + "\(request.username)")
         sessionView.updateClipboard(clipboardDiagnostics)
         diagnosticsController?.update(diagnostics: clipboardDiagnostics,
                                       session: sessionDescription())
-        LogStore.shared.append("Запуск подключения к \(request.host):\(request.port)", level: 0)
+        LogStore.shared.append(L("Запуск подключения к %@:%@", String(describing: request.host), String(describing: request.port)), level: 0)
+    }
+
+    private func reconnectFromDiagnostics() {
+        guard let client, connected else { return }
+        let alert = NSAlert()
+        alert.messageText = L("Переподключиться для восстановления буфера?")
+        alert.informativeText = L("Текущая сессия будет отключена и подключена снова. Остальные сессии продолжат работу.")
+        alert.addButton(withTitle: L("Переподключиться"))
+        alert.addButton(withTitle: L("Отмена"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        pendingReconnect = true
+        client.disconnect()
     }
 
     private func retryConnection() {
         guard let request = lastRequest else {
-            showForm(message: "Нет параметров для повторного подключения.", isError: true)
+            showForm(message: L("Нет параметров для повторного подключения."), isError: true)
             return
         }
         legacyPromptShown = false
@@ -209,19 +223,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Сервер использует устаревший TLS"
-        alert.informativeText = """
-        \(error ?? "Обычный TLS не смог установить соединение.")
-
-        Обычно это старый сертификат Windows (SHA-1 или ключ RSA-1024), который OpenSSL 3
-        отклоняет по умолчанию. Можно повторить подключение в режиме совместимости
-        (SECLEVEL=0): трафик останется зашифрованным, но стойкость TLS будет ниже.
-        Сертификат всё равно будет показан, и его нужно подтвердить вручную.
-
-        Используйте это только для доверенного сервера в локальной сети.
-        """
-        alert.addButton(withTitle: "Подключиться в режиме совместимости")
-        alert.addButton(withTitle: "Отмена")
+        alert.messageText = L("Сервер использует устаревший TLS")
+        alert.informativeText = L("%@\n\nОбычно это старый сертификат Windows (SHA-1 или ключ RSA-1024), который OpenSSL 3\nотклоняет по умолчанию. Можно повторить подключение в режиме совместимости\n(SECLEVEL=0): трафик останется зашифрованным, но стойкость TLS будет ниже.\nСертификат всё равно будет показан, и его нужно подтвердить вручную.\n\nИспользуйте это только для доверенного сервера в локальной сети.", String(describing: error ?? L("Обычный TLS не смог установить соединение.")))
+        alert.addButton(withTitle: L("Подключиться в режиме совместимости"))
+        alert.addButton(withTitle: L("Отмена"))
         guard alert.runModal() == .alertFirstButtonReturn else { return false }
 
         let updated = request.withLegacyTLS()
@@ -230,7 +235,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         // Do not persist an insecure compatibility mode automatically. The
         // warning applies to this retry; the user must explicitly opt in again
         // if they want the profile to use it after a restart.
-        LogStore.shared.append("Повтор подключения с совместимым TLS (SECLEVEL=0)", level: 1)
+        LogStore.shared.append(L("Повтор подключения с совместимым TLS (SECLEVEL=0)"), level: 1)
         connect(updated)
         return true
     }
@@ -260,30 +265,30 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         guard let id, let profile = profileStore.profiles.first(where: { $0.id == id }) else {
             formView.clearProfileSelection()
             formView.clearPassword()
-            formView.showMessage("Новый профиль. Заполните параметры подключения.", isError: false)
+            formView.showMessage(L("Новый профиль. Заполните параметры подключения."), isError: false)
             return
         }
         let password = profileStore.password(for: profile)
         formView.applyProfile(profile, password: password)
         if profile.savePassword && password == nil {
-            formView.showMessage("В Keychain не найден пароль для этого профиля. Введите пароль.",
+            formView.showMessage(L("В Keychain не найден пароль для этого профиля. Введите пароль."),
                                  isError: false)
         } else {
-            formView.showMessage("Профиль: \(profile.displayName)", isError: false)
+            formView.showMessage(L("Профиль: %@", String(describing: profile.displayName)), isError: false)
         }
     }
 
     private func promptSaveProfile(_ profile: Profile) {
         let alert = NSAlert()
-        alert.messageText = "Сохранить профиль"
-        alert.informativeText = "Пароль в JSON-профиль не записывается. Для пароля используйте "
-            + "галочку «Сохранить пароль в Keychain»."
-        alert.addButton(withTitle: "Сохранить")
-        alert.addButton(withTitle: "Отмена")
+        alert.messageText = L("Сохранить профиль")
+        alert.informativeText = L("Пароль в JSON-профиль не записывается. Для пароля используйте ")
+            + L("галочку «Сохранить пароль в Keychain».")
+        alert.addButton(withTitle: L("Сохранить"))
+        alert.addButton(withTitle: L("Отмена"))
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "Имя профиля"
+        field.placeholderString = L("Имя профиля")
         field.stringValue = profile.name.isEmpty
-            ? (profile.host.isEmpty ? "Профиль" : profile.displayName)
+            ? (profile.host.isEmpty ? L("Профиль") : profile.displayName)
             : profile.name
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
@@ -297,33 +302,33 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         profileStore.upsert(saved)
         formView.setProfiles(profileStore.profiles, selectedID: saved.id)
         formView.applyProfile(saved, password: formView.currentPassword)
-        formView.showMessage("Профиль сохранён: \(saved.name)", isError: false)
-        LogStore.shared.append("Профиль сохранён: \(saved.name) (\(saved.host):\(saved.port))",
+        formView.showMessage(L("Профиль сохранён: %@", String(describing: saved.name)), isError: false)
+        LogStore.shared.append(L("Профиль сохранён: %@ (%@:%@)", String(describing: saved.name), String(describing: saved.host), String(describing: saved.port)),
                                level: 0)
     }
 
     private func deleteProfile(_ id: UUID) {
         guard let profile = profileStore.profiles.first(where: { $0.id == id }) else { return }
         let alert = NSAlert()
-        alert.messageText = "Удалить профиль «\(profile.displayName)»?"
-        alert.informativeText = "Пароль этого профиля будет удалён из Keychain."
-        alert.addButton(withTitle: "Удалить")
-        alert.addButton(withTitle: "Отмена")
+        alert.messageText = L("Удалить профиль «%@»?", String(describing: profile.displayName))
+        alert.informativeText = L("Пароль этого профиля будет удалён из Keychain.")
+        alert.addButton(withTitle: L("Удалить"))
+        alert.addButton(withTitle: L("Отмена"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         profileStore.forgetPassword(for: profile)
         profileStore.delete(id: id)
         formView.clearProfileSelection()
         formView.clearPassword()
         formView.setProfiles(profileStore.profiles, selectedID: nil)
-        formView.showMessage("Профиль удалён.", isError: false)
-        LogStore.shared.append("Профиль удалён: \(profile.displayName)", level: 0)
+        formView.showMessage(L("Профиль удалён."), isError: false)
+        LogStore.shared.append(L("Профиль удалён: %@", String(describing: profile.displayName)), level: 0)
     }
 
     private func forgetPassword() {
         KeychainStore.delete(account: formView.currentAccount)
         formView.clearPassword()
-        formView.showMessage("Пароль удалён из Keychain и из поля ввода.", isError: false)
-        LogStore.shared.append("Пароль удалён из Keychain для текущего сервера/пользователя", level: 0)
+        formView.showMessage(L("Пароль удалён из Keychain и из поля ввода."), isError: false)
+        LogStore.shared.append(L("Пароль удалён из Keychain для текущего сервера/пользователя"), level: 0)
     }
 
     // MARK: - RDPMacClientDelegate
@@ -335,7 +340,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         case .connecting:
             sessionView.showConnecting(message)
         case .disconnecting:
-            sessionView.showConnecting("Отключение…")
+            sessionView.showConnecting(L("Отключение…"))
         case .disconnected, .failed:
             sessionActive = false
             connected = false
@@ -364,7 +369,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         sessionView.updateClipboard(client.clipboardDiagnostics())
         sessionView.rdpView.needsDisplay = true
         window?.title = "\(currentHost):\(currentPort) · \(lastRequest?.username ?? "") — RDP Mac"
-        LogStore.shared.append("Сеанс установлен: \(lastRemoteSize.width)×\(lastRemoteSize.height)",
+        LogStore.shared.append(L("Сеанс установлен: %@×%@", String(describing: lastRemoteSize.width), String(describing: lastRemoteSize.height)),
                                level: 0)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             self?.scheduleRemoteResize()
@@ -375,7 +380,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         lastRemoteSize = (width: Int(width), height: Int(height))
         sessionView.updateResolution(width: Int(width), height: Int(height))
         sessionView.rdpView.needsDisplay = true
-        LogStore.shared.append("Разрешение сеанса изменено: \(width)×\(height)", level: 0)
+        LogStore.shared.append(L("Разрешение сеанса изменено: %@×%@", String(describing: width), String(describing: height)), level: 0)
     }
 
     func rdpClient(_ client: RDPMacClient, didUpdateFrameIn rect: CGRect) {
@@ -398,14 +403,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func rdpClient(_ client: RDPMacClient, didDisconnectWithError error: String?) {
+        if pendingReconnect {
+            pendingReconnect = false
+            retryConnection()
+            return
+        }
         connected = false
         sessionActive = false
-        let message = error ?? "Сеанс завершён."
+        let message = error ?? L("Сеанс завершён.")
         window?.title = "RDP Mac"
         diagnosticsController?.setSessionActive(false)
         diagnosticsController?.update(diagnostics: clipboardDiagnostics,
                                       session: sessionDescription())
-        LogStore.shared.append(error == nil ? "Сеанс завершён" : "Сеанс завершён с ошибкой: \(message)",
+        LogStore.shared.append(error == nil ? L("Сеанс завершён") : L("Сеанс завершён с ошибкой: %@", String(describing: message)),
                                level: error == nil ? 0 : 2)
         if offerLegacyTLSIfNeeded(client: client, error: error) {
             return
@@ -425,18 +435,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = info.changed
-            ? "Сертификат сервера изменился"
-            : "Сервер предъявил неизвестный сертификат"
-        alert.informativeText = """
-        \(info.details)
-
-        Сертификат не подтверждён системным хранилищем доверия. Подключайтесь, только если
-        отпечаток SHA-256 совпадает с ожидаемым. «Запомнить» сохраняет сертификат в known_hosts
-        FreeRDP для этого сервера.
-        """
-        alert.addButton(withTitle: "Отклонить")
-        alert.addButton(withTitle: "Принять один раз")
-        alert.addButton(withTitle: "Принять и запомнить")
+            ? L("Сертификат сервера изменился")
+            : L("Сервер предъявил неизвестный сертификат")
+        alert.informativeText = L("%@\n\nСертификат не подтверждён системным хранилищем доверия. Подключайтесь, только если\nотпечаток SHA-256 совпадает с ожидаемым. «Запомнить» сохраняет сертификат в known_hosts\nFreeRDP для этого сервера.", String(describing: info.details))
+        alert.addButton(withTitle: L("Отклонить"))
+        alert.addButton(withTitle: L("Принять один раз"))
+        alert.addButton(withTitle: L("Принять и запомнить"))
 
         let response = alert.runModal()
         let decision: RDPMacCertificateDecision
@@ -452,17 +456,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     }
 
     private func sessionDescription() -> String {
-        guard let client else { return "нет клиента" }
+        guard let client else { return L("нет клиента") }
         switch client.state {
         case .connected:
-            return "подключено, \(lastRemoteSize.width)×\(lastRemoteSize.height), "
+            return L("подключено, %@×%@, ", String(describing: lastRemoteSize.width), String(describing: lastRemoteSize.height))
                 + "\(currentHost):\(currentPort)"
         case .connecting:
-            return "подключение к \(currentHost):\(currentPort)"
+            return L("подключение к %@:%@", String(describing: currentHost), String(describing: currentPort))
         case .disconnecting:
-            return "отключение"
+            return L("отключение")
         default:
-            return "нет активного сеанса"
+            return L("нет активного сеанса")
         }
     }
 
@@ -472,13 +476,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         if sessionActive || client?.state == .connecting {
             client?.disconnect()
         } else {
-            showForm(message: "Сеанс не активен.", isError: false)
+            showForm(message: L("Сеанс не активен."), isError: false)
         }
     }
 
     @objc func sendCtrlAltDelete(_ sender: Any?) {
         guard connected else {
-            LogStore.shared.append("Ctrl+Alt+Delete не отправлен: нет активного сеанса", level: 1)
+            LogStore.shared.append(L("Ctrl+Alt+Delete не отправлен: нет активного сеанса"), level: 1)
             return
         }
         client?.sendCtrlAltDelete()
@@ -490,7 +494,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
 
     @objc func clipboardSendLocal(_ sender: Any?) {
         guard connected else {
-            LogStore.shared.append("Буфер: нет активного сеанса", level: 1)
+            LogStore.shared.append(L("Буфер: нет активного сеанса"), level: 1)
             return
         }
         client?.clipboardSendLocal()
@@ -498,7 +502,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
 
     @objc func clipboardRequestRemote(_ sender: Any?) {
         guard connected else {
-            LogStore.shared.append("Буфер: нет активного сеанса", level: 1)
+            LogStore.shared.append(L("Буфер: нет активного сеанса"), level: 1)
             return
         }
         client?.clipboardRequestRemote()
@@ -506,7 +510,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
 
     @objc func clipboardResync(_ sender: Any?) {
         guard connected else {
-            LogStore.shared.append("Буфер: нет активного сеанса", level: 1)
+            LogStore.shared.append(L("Буфер: нет активного сеанса"), level: 1)
             return
         }
         client?.clipboardResync()
@@ -518,6 +522,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
             controller.onSendLocal = { [weak self] in self?.clipboardSendLocal(nil) }
             controller.onRequestRemote = { [weak self] in self?.clipboardRequestRemote(nil) }
             controller.onResync = { [weak self] in self?.clipboardResync(nil) }
+            controller.onReconnect = { [weak self] in self?.reconnectFromDiagnostics() }
             controller.onExportLog = { [weak self] in self?.exportLog(nil) }
             diagnosticsController = controller
         }
@@ -525,7 +530,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
                                           ?? clipboardDiagnostics,
                                       session: sessionDescription())
         diagnosticsController?.setSessionActive(connected)
-        diagnosticsController?.window?.title = "Буфер — \(currentHost):\(currentPort)"
+        diagnosticsController?.window?.title = L("Буфер — %@:%@", String(describing: currentHost), String(describing: currentPort))
         diagnosticsController?.showWindow(nil)
         diagnosticsController?.window?.makeKeyAndOrderFront(nil)
     }
@@ -542,16 +547,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     @objc func exportLog(_ sender: Any?) {
         guard let window else { return }
         let panel = NSSavePanel()
-        panel.title = "Экспорт журнала RDP Mac"
+        panel.title = L("Экспорт журнала RDP Mac")
         panel.nameFieldStringValue = "rdp-mac-log.txt"
         panel.allowedContentTypes = [.plainText]
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }
             do {
                 try LogStore.shared.export(to: url)
-                LogStore.shared.append("Журнал экспортирован: \(url.lastPathComponent)", level: 0)
+                LogStore.shared.append(L("Журнал экспортирован: %@", String(describing: url.lastPathComponent)), level: 0)
             } catch {
-                LogStore.shared.append("Не удалось экспортировать журнал: "
+                LogStore.shared.append(L("Не удалось экспортировать журнал: ")
                                        + error.localizedDescription, level: 2)
             }
         }
@@ -573,9 +578,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
 
     @objc func showHelp(_ sender: Any?) {
         let alert = NSAlert()
-        alert.messageText = "RDP Mac: что уже работает"
+        alert.messageText = L("RDP Mac: что уже работает")
         alert.informativeText = HelpText.supported
-        alert.addButton(withTitle: "Понятно")
+        alert.addButton(withTitle: L("Понятно"))
         alert.runModal()
     }
 
@@ -619,8 +624,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
             return
         }
         if !client.requestDesktopSize(UInt(width), height: UInt(height)) {
-            LogStore.shared.append("DisplayControl: не удалось запросить размер \(width)×\(height)",
+            LogStore.shared.append(L("DisplayControl: не удалось запросить размер %@×%@", String(describing: width), String(describing: height)),
                                    level: 1)
+        }
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        if window?.occlusionState.contains(.visible) == true {
+            sessionView.rdpView.needsDisplay = true
         }
     }
 
@@ -667,10 +678,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         if closingSession { return true }
         if sessionActive || client?.state == .connecting || client?.state == .disconnecting {
             let alert = NSAlert()
-            alert.messageText = "Отключить эту сессию и закрыть окно?"
-            alert.informativeText = "Остальные подключения продолжат работу."
-            alert.addButton(withTitle: "Отключить и закрыть")
-            alert.addButton(withTitle: "Отмена")
+            alert.messageText = L("Отключить эту сессию и закрыть окно?")
+            alert.informativeText = L("Остальные подключения продолжат работу.")
+            alert.addButton(withTitle: L("Отключить и закрыть"))
+            alert.addButton(withTitle: L("Отмена"))
             guard alert.runModal() == .alertFirstButtonReturn else { return false }
             closingSession = true
             prepareForTermination { [weak self] in self?.window?.performClose(nil) }
@@ -690,6 +701,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     }
 
     func prepareForTermination(_ completion: @escaping () -> Void) {
+        pendingReconnect = false
         resizeTimer?.invalidate()
         guard let client else {
             completion()

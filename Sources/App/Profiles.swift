@@ -10,11 +10,11 @@ enum ConnectionSecurity: Int, Codable, CaseIterable {
     var title: String {
         switch self {
         case .negotiate:
-            return "NLA / TLS — рекомендуется"
+            return L("NLA / TLS — рекомендуется")
         case .tls:
-            return "Только TLS (без NLA)"
+            return L("Только TLS (без NLA)")
         case .legacyRDP:
-            return "RDP security (небезопасно, старые серверы)"
+            return L("RDP security (небезопасно, старые серверы)")
         }
     }
 
@@ -39,7 +39,7 @@ enum ResolutionMode: Int, Codable, CaseIterable {
     var title: String {
         switch self {
         case .window:
-            return "Как в окне (Retina)"
+            return L("Как в окне (Retina)")
         case .hd:
             return "1280 × 720"
         case .fullHD:
@@ -92,12 +92,12 @@ struct Profile: Codable, Identifiable, Equatable {
 
     var groupName: String {
         let value = group?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return value.isEmpty ? "Без группы" : value
+        return value.isEmpty ? L("Без группы") : value
     }
 
     var displayName: String {
         if !name.isEmpty { return name }
-        if host.isEmpty { return "Новый профиль" }
+        if host.isEmpty { return L("Новый профиль") }
         return username.isEmpty ? host : "\(username)@\(host)"
     }
 
@@ -127,7 +127,7 @@ final class ProfileStore {
         do {
             profiles = try JSONDecoder().decode([Profile].self, from: data)
         } catch {
-            LogStore.shared.append("Не удалось прочитать профили: \(error.localizedDescription)", level: 2)
+            LogStore.shared.append(L("Не удалось прочитать профили: %@", String(describing: error.localizedDescription)), level: 2)
             profiles = []
         }
     }
@@ -153,7 +153,7 @@ final class ProfileStore {
             let data = try JSONEncoder.pretty.encode(profiles)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            LogStore.shared.append("Не удалось сохранить профили: \(error.localizedDescription)", level: 2)
+            LogStore.shared.append(L("Не удалось сохранить профили: %@", String(describing: error.localizedDescription)), level: 2)
         }
     }
 
@@ -195,7 +195,7 @@ enum KeychainStore {
               let data = item as? Data,
               let password = String(data: data, encoding: .utf8) else {
             if status != errSecItemNotFound {
-                LogStore.shared.append("Keychain: не удалось прочитать пароль (код \(status))", level: 1)
+                LogStore.shared.append(L("Keychain: не удалось прочитать пароль (код %@)", String(describing: status)), level: 1)
             }
             return nil
         }
@@ -222,7 +222,7 @@ enum KeychainStore {
             status = SecItemAdd(add as CFDictionary, nil)
         }
         if status != errSecSuccess {
-            LogStore.shared.append("Keychain: не удалось сохранить пароль (код \(status))", level: 1)
+            LogStore.shared.append(L("Keychain: не удалось сохранить пароль (код %@)", String(describing: status)), level: 1)
             return false
         }
         return true
@@ -236,7 +236,7 @@ enum KeychainStore {
         ]
         let status = SecItemDelete(query as CFDictionary)
         if status != errSecSuccess && status != errSecItemNotFound {
-            LogStore.shared.append("Keychain: не удалось удалить пароль (код \(status))", level: 1)
+            LogStore.shared.append(L("Keychain: не удалось удалить пароль (код %@)", String(describing: status)), level: 1)
         }
     }
 }

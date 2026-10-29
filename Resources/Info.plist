@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>ru</string>
+    <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array><string>en</string><string>ru</string></array>
     <key>CFBundleDisplayName</key>
     <string>RDP Mac</string>
     <key>CFBundleExecutable</key>
@@ -31,10 +33,10 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Собственный клиент на базе FreeRDP. FreeRDP и OpenSSL распространяются по Apache-2.0.</string>
+    <string>Independent RDP client built on FreeRDP. FreeRDP and OpenSSL: Apache-2.0.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
-    <false/>
+    <true/>
 </dict>
 </plist>

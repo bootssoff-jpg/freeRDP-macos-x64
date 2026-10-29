@@ -240,6 +240,34 @@ static void RDPMacSendScancode(rdpInput *input, uint32_t scancode, BOOL down)
     freerdp_input_send_keyboard_event(input, flags, (UINT8)(scancode & 0xFF));
 }
 
+// Windows has no dedicated Secure Attention Sequence PDU: a remote client
+// triggers it with a key combination, and servers differ in which one they
+// translate. Ctrl+Alt+End is the documented client sequence, while the literal
+// Ctrl+Alt+Delete is what mobile FreeRDP clients send. Both are delivered while
+// Ctrl and Alt stay held, so the security screen still opens exactly once. End
+// and Delete are extended keys (E0 4F and E0 53); the extended bit is part of
+// the RDP_SCANCODE_* values.
+static const RDPMacKeyEvent RDPMacSASSequence[] = {
+    {RDP_SCANCODE_LCONTROL, TRUE},
+    {RDP_SCANCODE_LMENU, TRUE},
+    {RDP_SCANCODE_END, TRUE},
+    {RDP_SCANCODE_END, FALSE},
+    {RDP_SCANCODE_DELETE, TRUE},
+    {RDP_SCANCODE_DELETE, FALSE},
+    {RDP_SCANCODE_LMENU, FALSE},
+    {RDP_SCANCODE_LCONTROL, FALSE},
+};
+
+NSUInteger RDPMacSecureAttentionSequence(RDPMacKeyEvent *events, NSUInteger capacity)
+{
+    const NSUInteger count = sizeof(RDPMacSASSequence) / sizeof(RDPMacSASSequence[0]);
+    if (events) {
+        for (NSUInteger i = 0; i < count && i < capacity; i++)
+            events[i] = RDPMacSASSequence[i];
+    }
+    return count;
+}
+
 static void RDPMacSendUnicodeUnit(rdpInput *input, uint16_t unit)
 {
     if (!input)
@@ -1846,15 +1874,46 @@ static int RDPMacClampCoordinate(int value, size_t limit)
         pthread_mutex_unlock(&_apiLock);
         return;
     }
-    RDPMacSendScancode(input, RDP_SCANCODE_LCONTROL, TRUE);
-    RDPMacSendScancode(input, RDP_SCANCODE_LMENU, TRUE);
-    RDPMacSendScancode(input, RDP_SCANCODE_END, TRUE);
-    RDPMacSendScancode(input, RDP_SCANCODE_END, FALSE);
-    RDPMacSendScancode(input, RDP_SCANCODE_LMENU, FALSE);
-    RDPMacSendScancode(input, RDP_SCANCODE_LCONTROL, FALSE);
+
+    // A modifier this client still tracks as pressed (focus changed while it
+    // was held, or a lost key-up) would make the server ignore the synthetic
+    // Ctrl/Alt presses, so release those keys first.
+    struct {
+        uint32_t bit;
+        uint32_t scancode;
+    } tracked[] = {
+        {RDPMacRemoteShift, RDP_SCANCODE_LSHIFT},
+        {RDPMacRemoteControl, RDP_SCANCODE_LCONTROL},
+        {RDPMacRemoteAlt, RDP_SCANCODE_LMENU},
+        {RDPMacRemoteWin, RDP_SCANCODE_LWIN},
+    };
+    for (size_t i = 0; i < sizeof(tracked) / sizeof(tracked[0]); i++) {
+        if ((_sentModifiers & tracked[i].bit) != 0)
+            freerdp_input_send_keyboard_event_ex(input, FALSE, FALSE, tracked[i].scancode);
+    }
     _sentModifiers = 0;
+
+    RDPMacKeyEvent events[16] = {0};
+    const NSUInteger capacity = sizeof(events) / sizeof(events[0]);
+    const NSUInteger count = RDPMacSecureAttentionSequence(events, capacity);
+    NSUInteger sent = 0;
+    for (NSUInteger i = 0; i < count && i < capacity; i++) {
+        // Synthetic presses are fresh transitions: repeat = FALSE, because
+        // KBD_FLAGS_DOWN tells the server the key was already held down.
+        if (freerdp_input_send_keyboard_event_ex(input, events[i].down, FALSE, events[i].scancode))
+            sent++;
+    }
     pthread_mutex_unlock(&_apiLock);
-    [self logMessage:RDPMacLocalizedString(@"Отправлена комбинация Ctrl+Alt+Delete (Ctrl+Alt+End)") level:0];
+
+    if (sent == count) {
+        [self logMessage:[NSString stringWithFormat:
+                          RDPMacLocalizedString(@"Отправлен Ctrl+Alt+Delete: %lu событий клавиатуры (Ctrl+Alt+End и Ctrl+Alt+Delete)"),
+                          (unsigned long)sent] level:0];
+    } else {
+        [self logMessage:[NSString stringWithFormat:
+                          RDPMacLocalizedString(@"Ctrl+Alt+Delete не отправлен: сеанс отклонил %lu из %lu событий клавиатуры"),
+                          (unsigned long)(count - sent), (unsigned long)count] level:1];
+    }
 }
 
 - (BOOL)requestDesktopSize:(NSUInteger)width height:(NSUInteger)height

@@ -6,10 +6,15 @@ import CoreGraphics
 final class RDPView: NSView {
     weak var client: RDPMacClient?
 
+    /// Raised for ⌘⇧Delete, the documented shortcut for the Windows security
+    /// screen (the remote equivalent of Ctrl+Alt+Delete).
+    var onSecureAttention: (() -> Void)?
+
     private var frameData = Data()
     private var remoteWidth = 0
     private var remoteHeight = 0
     private var tracking: NSTrackingArea?
+    private var secureAttentionKeyHeld = false
 
     // Use the standard (bottom-left) AppKit coordinate system: CGImage is
     // drawn upright there. Mouse coordinates are converted explicitly below.
@@ -264,6 +269,16 @@ final class RDPView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        // ⌘⇧Delete raises the Windows security screen; the shortcut never
+        // reaches the remote keyboard as a Delete key press.
+        if event.keyCode == 117, event.modifierFlags.contains(.command),
+           event.modifierFlags.contains(.shift) {
+            if !secureAttentionKeyHeld {
+                secureAttentionKeyHeld = true
+                onSecureAttention?()
+            }
+            return
+        }
         client?.sendKeyEvent(withKeyCode: event.keyCode,
                              characters: event.characters ?? "",
                              modifiers: event.modifierFlags.rawValue,
@@ -272,6 +287,10 @@ final class RDPView: NSView {
     }
 
     override func keyUp(with event: NSEvent) {
+        if event.keyCode == 117 && secureAttentionKeyHeld {
+            secureAttentionKeyHeld = false
+            return
+        }
         client?.sendKeyEvent(withKeyCode: event.keyCode,
                              characters: event.characters ?? "",
                              modifiers: event.modifierFlags.rawValue,

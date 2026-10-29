@@ -59,8 +59,11 @@ version and sanitized log; never include passwords or clipboard contents.
 - [ ] Fullscreen enter/exit works; the session toolbar returns.
 - [ ] Mouse buttons, wheel, side buttons and keyboard modifiers work.
 - [ ] Russian/English input, CapsLock, Emoji and multiline text work.
-- [ ] `⌘C`/`⌘V` inside the session act as `Ctrl+C`/`Ctrl+V`; `⌘⇧Delete`
-      opens the Windows security screen.
+- [ ] `⌘C`/`⌘V` inside the session act as `Ctrl+C`/`Ctrl+V`.
+- [ ] Actions → “Ctrl+Alt+Del” and `⌘⇧Delete` both open the Windows security
+      screen; the log then shows “Ctrl+Alt+Delete sent: 8 keyboard events”.
+      A “not sent” line means the session rejected the events, not that the
+      remote policy blocked the screen.
 
 ### Clipboard
 

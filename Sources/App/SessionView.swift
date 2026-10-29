@@ -66,6 +66,7 @@ final class SessionView: NSView {
         ])
 
         rdpView.translatesAutoresizingMaskIntoConstraints = false
+        rdpView.onSecureAttention = { [weak self] in self?.onCtrlAltDelete?() }
         addSubview(toolbar)
         addSubview(rdpView)
 

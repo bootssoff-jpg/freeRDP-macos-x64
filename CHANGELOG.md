@@ -4,6 +4,20 @@ All notable changes are documented here. This project follows semantic
 versioning for public builds. A version is not published until an artifact is
 actually uploaded.
 
+## Unreleased
+
+### Fixed
+
+- Actions → **Ctrl+Alt+Del** now reaches the Windows security screen. The
+  previous sequence marked every synthetic press as auto-repeat
+  (`KBD_FLAGS_DOWN`), which the server can discard for the Secure Attention
+  Sequence; it also sent only the Ctrl+Alt+End form. The action now sends fresh
+  key transitions for both Ctrl+Alt+End and Ctrl+Alt+Delete, releases modifiers
+  that this client still considered pressed, and logs how many keyboard events
+  the session accepted (never key contents).
+- `⌘⇧Delete` is now wired to the same action; it was documented in
+  `docs/testing.md` but never implemented.
+
 ## 1.0.3 Preview
 
 ### Fixed

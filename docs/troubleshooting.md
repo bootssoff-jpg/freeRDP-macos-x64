@@ -58,6 +58,21 @@ passwords or clipboard contents. No automatic TLS downgrade is performed.
 - **Clipboard content is never logged** — only formats, byte counts and error
   codes are recorded. Do not paste clipboard contents into a bug report.
 
+## Keyboard and Ctrl+Alt+Delete
+
+- **Ctrl+Alt+Del does not open the Windows security screen** — use Actions →
+  “Ctrl+Alt+Del” or `⌘⇧Delete`. The client sends both Ctrl+Alt+End and the
+  literal Ctrl+Alt+Delete, because Windows servers differ in which combination
+  they translate into the Secure Attention Sequence. The log records how many
+  keyboard events the session accepted ("Ctrl+Alt+Delete sent: 8 keyboard
+  events"); it never records key contents.
+- **Nothing happens after “not sent”** — the session had already stopped
+  accepting input (disconnect or reactivation pending). Reconnect instead of
+  repeating the action.
+- **A modifier seems stuck remotely** — click the remote desktop once and press
+  and release the modifier locally; the client resynchronizes Shift/Ctrl/Alt
+  state on the next key or focus event.
+
 ## macOS / Gatekeeper
 
 - **“RDP Mac is damaged” or cannot be opened** — an unsigned build requires

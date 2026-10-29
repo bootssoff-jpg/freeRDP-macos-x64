@@ -161,6 +161,23 @@ int main(void)
             expect(![client requestDesktopSize:1024 height:768],
                    @"DisplayControl request fails without a session");
             [client sendCtrlAltDelete];
+            RDPMacKeyEvent sas[16] = {0};
+            const NSUInteger sasCount = RDPMacSecureAttentionSequence(sas, 16);
+            expect(sasCount == 8, @"Ctrl+Alt+Delete sequence has eight key events");
+            expect(RDPMacSecureAttentionSequence(NULL, 0) == 8,
+                   @"Ctrl+Alt+Delete sequence length is reported without a buffer");
+            expect(sas[0].scancode == 0x1D && sas[0].down &&
+                       sas[1].scancode == 0x38 && sas[1].down,
+                   @"Ctrl+Alt+Delete presses Control then Alt first");
+            expect((sas[2].scancode & 0xFF) == 0x4F && (sas[2].scancode & 0x100) && sas[2].down &&
+                       (sas[3].scancode & 0xFF) == 0x4F && (sas[3].scancode & 0x100) && !sas[3].down,
+                   @"Ctrl+Alt+Delete sends the extended End scancode (E0 4F)");
+            expect((sas[4].scancode & 0xFF) == 0x53 && (sas[4].scancode & 0x100) && sas[4].down &&
+                       (sas[5].scancode & 0xFF) == 0x53 && (sas[5].scancode & 0x100) && !sas[5].down,
+                   @"Ctrl+Alt+Delete also sends the extended Delete scancode (E0 53)");
+            expect(sas[6].scancode == 0x38 && !sas[6].down &&
+                       sas[7].scancode == 0x1D && !sas[7].down,
+                   @"Ctrl+Alt+Delete releases Alt then Control last");
             uint8_t buffer[16] = {0};
             size_t width = 0;
             size_t height = 0;

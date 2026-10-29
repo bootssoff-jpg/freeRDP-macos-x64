@@ -128,8 +128,22 @@ typedef NS_ENUM(NSInteger, RDPMacCertificateDecision) {
 /// Asynchronous. Safe to call repeatedly.
 - (void)disconnect;
 
-/// Sends the RDP equivalent of Ctrl+Alt+Delete (Ctrl+Alt+End).
+/// Sends the RDP equivalent of Ctrl+Alt+Delete (Ctrl+Alt+End, followed by the
+/// literal Ctrl+Alt+Delete because servers differ in which sequence they
+/// translate into the Windows Secure Attention Sequence).
 - (void)sendCtrlAltDelete;
+
+/// One synthetic key event of the Ctrl+Alt+Delete sequence.
+typedef struct {
+    /// RDP_SCANCODE_* value; the extended bit (0x100) is already included.
+    uint32_t scancode;
+    BOOL down;
+} RDPMacKeyEvent;
+
+/// Copies the Ctrl+Alt+Delete sequence into `events` (up to `capacity`) and
+/// returns its full length. Exposed so unit tests can verify the wire sequence.
+FOUNDATION_EXPORT NSUInteger RDPMacSecureAttentionSequence(RDPMacKeyEvent *_Nullable events,
+                                                           NSUInteger capacity);
 
 /// Requests a new remote desktop size through the DisplayControl channel.
 - (BOOL)requestDesktopSize:(NSUInteger)width height:(NSUInteger)height;

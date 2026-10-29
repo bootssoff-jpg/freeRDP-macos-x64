@@ -270,7 +270,8 @@
 "Недостаточно памяти для буфера кадра" = "Not enough memory for the framebuffer";
 "Удалённый рабочий стол: %lux%lu, формат BGRX32" = "Remote desktop: %lux%lu, BGRX32 format";
 "Размер удалённого рабочего стола изменён: %lux%lu" = "Remote desktop size changed: %lux%lu";
-"Отправлена комбинация Ctrl+Alt+Delete (Ctrl+Alt+End)" = "Ctrl+Alt+Delete sent as Ctrl+Alt+End";
+"Отправлен Ctrl+Alt+Delete: %lu событий клавиатуры (Ctrl+Alt+End и Ctrl+Alt+Delete)" = "Ctrl+Alt+Delete sent: %lu keyboard events (Ctrl+Alt+End and Ctrl+Alt+Delete)";
+"Ctrl+Alt+Delete не отправлен: сеанс отклонил %lu из %lu событий клавиатуры" = "Ctrl+Alt+Delete not sent: the session rejected %lu of %lu keyboard events";
 "DisplayControl недоступен: изменение размера не отправлено" = "DisplayControl unavailable: resize not sent";
 "DisplayControl: запрос размера не принят (0x%08X)" = "DisplayControl: size request rejected (0x%08X)";
 "DisplayControl: запрошен размер %lux%lu" = "DisplayControl: requested size %lux%lu";

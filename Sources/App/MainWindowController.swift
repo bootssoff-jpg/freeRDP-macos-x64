@@ -15,6 +15,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     private var sessionActive = false
     private var connected = false
     private var pendingShowSettings = false
+    private var legacyPromptShown = false
+    private var didInitialProfileSelection = false
     private var currentHost = ""
     private var currentPort = 3389
     private var lastRemoteSize = (width: 0, height: 0)
@@ -64,6 +66,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         window.contentView = formView
         window.title = "RDP Mac"
         formView.setProfiles(profileStore.profiles, selectedID: formView.selectedProfile)
+        if !didInitialProfileSelection {
+            didInitialProfileSelection = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.formView.selectedProfile == nil,
+                      let first = self.profileStore.profiles.first else { return }
+                self.profileSelected(first.id)
+            }
+        }
         formView.setBusy(false)
         if let message {
             formView.showMessage(message, isError: isError)
@@ -91,6 +101,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         currentHost = request.host
         currentPort = request.port
         lastRequest = request
+        legacyPromptShown = false
 
         let account = KeychainStore.account(host: request.host,
                                             port: request.port,
@@ -130,6 +141,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
                                 securityMode: request.security.bridgeValue,
                                 clipboardEnabled: request.clipboardEnabled,
                                 commandAsControl: request.commandAsControl,
+                                allowLegacyTLS: request.legacyTLS,
                                 certificatePromptTimeout: 180)
         } catch {
             let message = (error as NSError).localizedDescription
@@ -156,7 +168,52 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
             showForm(message: "Нет параметров для повторного подключения.", isError: true)
             return
         }
+        legacyPromptShown = false
         connect(request)
+    }
+
+    /// Some old Windows servers use SHA-1/RSA-1024 certificates that OpenSSL 3
+    /// rejects at the default security level. Offer an explicit, warned retry
+    /// with SECLEVEL=0; certificate approval is still mandatory.
+    private func offerLegacyTLSIfNeeded(client: RDPMacClient, error: String?) -> Bool {
+        guard let request = lastRequest,
+              !request.legacyTLS,
+              client.lastErrorWasTLS,
+              !legacyPromptShown,
+              !pendingShowSettings else {
+            return false
+        }
+        legacyPromptShown = true
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Сервер использует устаревший TLS"
+        alert.informativeText = """
+        \(error ?? "Обычный TLS не смог установить соединение.")
+
+        Обычно это старый сертификат Windows (SHA-1 или ключ RSA-1024), который OpenSSL 3
+        отклоняет по умолчанию. Можно повторить подключение в режиме совместимости
+        (SECLEVEL=0): трафик останется зашифрованным, но стойкость TLS будет ниже.
+        Сертификат всё равно будет показан, и его нужно подтвердить вручную.
+
+        Используйте это только для доверенного сервера в локальной сети.
+        """
+        alert.addButton(withTitle: "Подключиться в режиме совместимости")
+        alert.addButton(withTitle: "Отмена")
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+
+        let updated = request.withLegacyTLS()
+        lastRequest = updated
+        formView.setLegacyTLS(true)
+        if let id = request.profileID,
+           var profile = profileStore.profiles.first(where: { $0.id == id }) {
+            profile.legacyTLS = true
+            profileStore.upsert(profile)
+            LogStore.shared.append("Для профиля включён совместимый TLS (SECLEVEL=0)", level: 1)
+        }
+        LogStore.shared.append("Повтор подключения с совместимым TLS (SECLEVEL=0)", level: 1)
+        connect(updated)
+        return true
     }
 
     // MARK: - Profiles and passwords
@@ -310,6 +367,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
                                       session: sessionDescription())
         LogStore.shared.append(error == nil ? "Сеанс завершён" : "Сеанс завершён с ошибкой: \(message)",
                                level: error == nil ? 0 : 2)
+        if offerLegacyTLSIfNeeded(client: client, error: error) {
+            return
+        }
         if pendingShowSettings {
             pendingShowSettings = false
             showForm(message: message, isError: error != nil)

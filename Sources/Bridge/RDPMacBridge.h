@@ -95,6 +95,9 @@ typedef NS_ENUM(NSInteger, RDPMacCertificateDecision) {
 @property (nonatomic, readonly) RDPMacConnectionState state;
 /// Last human readable error (Russian UI text). Never contains the password.
 @property (nonatomic, readonly, nullable) NSString *lastErrorText;
+/// YES when the last failed attempt stopped during the TLS handshake.
+/// Certificate rejection is not reported as a TLS failure.
+@property (nonatomic, readonly) BOOL lastErrorWasTLS;
 
 @property (nonatomic, readonly) size_t frameWidth;
 @property (nonatomic, readonly) size_t frameHeight;
@@ -114,6 +117,7 @@ typedef NS_ENUM(NSInteger, RDPMacCertificateDecision) {
           securityMode:(RDPMacSecurityMode)securityMode
      clipboardEnabled:(BOOL)clipboardEnabled
      commandAsControl:(BOOL)commandAsControl
+       allowLegacyTLS:(BOOL)allowLegacyTLS
  certificatePromptTimeout:(NSTimeInterval)timeout
                  error:(NSError *_Nullable *_Nullable)error;
 

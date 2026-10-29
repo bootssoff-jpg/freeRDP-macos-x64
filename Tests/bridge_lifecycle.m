@@ -55,6 +55,7 @@ static BOOL startToClosedPort(RDPMacClient *client, NSError **error)
                     securityMode:RDPMacSecurityModeNegotiate
                 clipboardEnabled:YES
                 commandAsControl:YES
+          allowLegacyTLS:NO
         certificatePromptTimeout:5
                            error:error];
 }
@@ -70,14 +71,14 @@ int main(void)
             BOOL started = [client startWithHost:@"" port:3389 username:@"u" domain:@""
                                         password:@"p" width:800 height:600
                                     securityMode:RDPMacSecurityModeNegotiate
-                                clipboardEnabled:YES commandAsControl:YES
+                                clipboardEnabled:YES commandAsControl:YES allowLegacyTLS:NO
                         certificatePromptTimeout:5 error:&error];
             expect(!started && error != nil, @"empty host is rejected");
             error = nil;
             started = [client startWithHost:@"127.0.0.1" port:0 username:@"u" domain:@""
                                    password:@"p" width:800 height:600
                                securityMode:RDPMacSecurityModeNegotiate
-                           clipboardEnabled:YES commandAsControl:YES
+                           clipboardEnabled:YES commandAsControl:YES allowLegacyTLS:NO
                    certificatePromptTimeout:5 error:&error];
             expect(!started && error != nil, @"invalid port is rejected");
             expect(![client requestDesktopSize:1024 height:768],

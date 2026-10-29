@@ -13,6 +13,23 @@ struct ConnectionRequest {
     let resolution: ResolutionMode
     let savePassword: Bool
     let profileID: UUID?
+    let legacyTLS: Bool
+
+    func withLegacyTLS() -> ConnectionRequest {
+        ConnectionRequest(host: host,
+                          port: port,
+                          username: username,
+                          domain: domain,
+                          password: password,
+                          security: security,
+                          clipboardEnabled: clipboardEnabled,
+                          commandAsControl: commandAsControl,
+                          autoResize: autoResize,
+                          resolution: resolution,
+                          savePassword: savePassword,
+                          profileID: profileID,
+                          legacyTLS: true)
+    }
 }
 
 final class ConnectFormView: NSView {
@@ -45,6 +62,9 @@ final class ConnectFormView: NSView {
     private let autoResizeCheckbox =
         UI.checkbox("Подстраивать разрешение под окно (DisplayControl)", target: nil, action: nil,
                     state: true)
+    private let legacyTLSCheckbox =
+        UI.checkbox("Совместимость TLS со старыми серверами (снижает стойкость)",
+                    target: nil, action: nil, state: false)
     private let connectButton = UI.button("Подключиться", target: nil, action: nil)
     private let progress = NSProgressIndicator()
     private let statusLabel = UI.label("", size: 12, color: .secondaryLabelColor, lines: 3)
@@ -90,6 +110,8 @@ final class ConnectFormView: NSView {
         logButton.action = #selector(showLog(_:))
         savePasswordCheckbox.target = self
         savePasswordCheckbox.action = #selector(savePasswordToggled(_:))
+        legacyTLSCheckbox.target = self
+        legacyTLSCheckbox.action = #selector(legacyTLSToggled(_:))
 
         securityPopup.addItems(withTitles: ConnectionSecurity.allCases.map { $0.title })
         securityPopup.selectItem(at: 0)
@@ -106,8 +128,11 @@ final class ConnectFormView: NSView {
         let passwordRow = UI.hStack([passwordField, savePasswordCheckbox, forgetPasswordButton])
         let securityRow = UI.hStack([securityPopup])
         let resolutionRow = UI.hStack([resolutionPopup])
-        let options = UI.vStack([clipboardCheckbox, commandAsControlCheckbox, autoResizeCheckbox],
-                                spacing: 5)
+        legacyTLSCheckbox.toolTip =
+            "Разрешает TLS SECLEVEL=0 для серверов со старыми сертификатами "
+            + "(например, SHA-1/RSA-1024). Сертификат всё равно нужно подтвердить вручную."
+        let options = UI.vStack([clipboardCheckbox, commandAsControlCheckbox, autoResizeCheckbox,
+                                 legacyTLSCheckbox], spacing: 5)
         let actionRow = UI.hStack([connectButton, progress], spacing: 12)
         let footer = UI.hStack([diagnosticsButton, logButton], spacing: 8)
 
@@ -175,6 +200,7 @@ final class ConnectFormView: NSView {
         clipboardCheckbox.state = profile.clipboardEnabled ? .on : .off
         commandAsControlCheckbox.state = profile.commandAsControl ? .on : .off
         autoResizeCheckbox.state = profile.autoResize ? .on : .off
+        legacyTLSCheckbox.state = (profile.legacyTLS ?? false) ? .on : .off
         savePasswordCheckbox.state = profile.savePassword ? .on : .off
         passwordField.stringValue = password ?? ""
         selectedProfileID = profile.id
@@ -206,7 +232,8 @@ final class ConnectFormView: NSView {
                 clipboardEnabled: clipboardCheckbox.state == .on,
                 commandAsControl: commandAsControlCheckbox.state == .on,
                 autoResize: autoResizeCheckbox.state == .on,
-                resolution: selectedResolution)
+                resolution: selectedResolution,
+                legacyTLS: legacyTLSCheckbox.state == .on)
     }
 
     var selectedProfile: UUID? { selectedProfileID }
@@ -221,6 +248,10 @@ final class ConnectFormView: NSView {
 
     func clearPassword() {
         passwordField.stringValue = ""
+    }
+
+    func setLegacyTLS(_ enabled: Bool) {
+        legacyTLSCheckbox.state = enabled ? .on : .off
     }
 
     func focusHost() {
@@ -304,6 +335,14 @@ final class ConnectFormView: NSView {
         }
     }
 
+    @objc private func legacyTLSToggled(_ sender: Any?) {
+        if legacyTLSCheckbox.state == .on {
+            showMessage("Включён совместимый TLS (SECLEVEL=0). Используйте только для доверенных "
+                        + "старых серверов; сертификат всё равно проверяется вручную.",
+                        isError: false)
+        }
+    }
+
     @objc private func showDiagnostics(_ sender: Any?) {
         onShowDiagnostics?()
     }
@@ -342,7 +381,8 @@ final class ConnectFormView: NSView {
                                         autoResize: autoResizeCheckbox.state == .on,
                                         resolution: selectedResolution,
                                         savePassword: savePasswordCheckbox.state == .on,
-                                        profileID: selectedProfileID)
+                                        profileID: selectedProfileID,
+                                        legacyTLS: legacyTLSCheckbox.state == .on)
         onConnect?(request)
     }
 }

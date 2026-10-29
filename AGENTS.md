@@ -45,6 +45,9 @@ otool -L "build/RDP Mac.app/Contents/MacOS/RDPMac"   # only @rpath/system libs
   formats, counters, timestamps and error codes only.
 - **Never** enable automatic certificate acceptance. Unknown certificates
   require an explicit user decision; rejection must abort the connection.
+- TLS compatibility mode (`TlsSecLevel = 0`) may only be enabled after an
+  explicit user action (checkbox or the warning prompt), never by default.
+  It must not bypass the certificate prompt.
 - Keep `profiles.json` free of passwords; Keychain only with explicit consent.
 - Do not add channels/libraries that were deliberately excluded (SDL, X11,
   FFmpeg, audio, rdpdr, smartcards, RAIL, RDPGFX) without updating build

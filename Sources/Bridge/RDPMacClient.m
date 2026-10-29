@@ -791,6 +791,7 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
     dispatch_semaphore_t _certificateSemaphore;
     BOOL _certificatePromptActive;
     BOOL _certificateRejected;
+    BOOL _lastErrorWasTLS;
 }
 
 + (void)initialize
@@ -917,6 +918,7 @@ static NSError *RDPMacClientError(NSString *message)
           securityMode:(RDPMacSecurityMode)securityMode
      clipboardEnabled:(BOOL)clipboardEnabled
      commandAsControl:(BOOL)commandAsControl
+       allowLegacyTLS:(BOOL)allowLegacyTLS
  certificatePromptTimeout:(NSTimeInterval)timeout
                  error:(NSError **)error
 {
@@ -950,6 +952,7 @@ static NSError *RDPMacClientError(NSString *message)
 
     _stopRequested = NO;
     _certificateRejected = NO;
+    _lastErrorWasTLS = NO;
     _clipboardEnabled = clipboardEnabled;
     _commandAsControl = commandAsControl;
     _certificateTimeout = MAX(10.0, MIN(timeout, 600.0));
@@ -1034,6 +1037,13 @@ static NSError *RDPMacClientError(NSString *message)
     ok = ok && freerdp_settings_set_bool(settings, FreeRDP_SupportHeartbeatPdu, FALSE);
     ok = ok && freerdp_settings_set_bool(settings, FreeRDP_SupportMultitransport, FALSE);
     ok = ok && freerdp_settings_set_bool(settings, FreeRDP_NegotiateSecurityLayer, TRUE);
+
+    if (allowLegacyTLS) {
+        // Compatibility with old Windows servers whose certificates use
+        // SHA-1/1024-bit keys. The certificate prompt remains mandatory.
+        ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_TlsSecLevel, 0);
+    }
+
     switch (securityMode) {
         case RDPMacSecurityModeTLS:
             ok = ok && freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, FALSE);
@@ -1138,6 +1148,8 @@ static NSError *RDPMacClientError(NSString *message)
         BOOL connected = freerdp_connect(instance);
         UINT32 errorCode = connected ? FREERDP_ERROR_SUCCESS : freerdp_get_last_error(instance->context);
         if (!connected) {
+            _lastErrorWasTLS =
+                !_certificateRejected && errorCode == FREERDP_ERROR_TLS_CONNECT_FAILED;
             NSString *message = _certificateRejected
                                     ? @"Сертификат сервера отклонён. Подключение отменено."
                                     : RDPMacErrorText(errorCode);
@@ -1189,6 +1201,8 @@ static NSError *RDPMacClientError(NSString *message)
             const UINT32 errorClass = GET_FREERDP_ERROR_CLASS(errorCode);
             if (errorClass != FREERDP_ERROR_ERRINFO_CLASS)
                 message = RDPMacErrorText(errorCode);
+            if (errorCode == FREERDP_ERROR_TLS_CONNECT_FAILED)
+                _lastErrorWasTLS = YES;
         }
         [self finishSessionWithContext:instance->context error:message];
     }

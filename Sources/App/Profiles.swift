@@ -86,6 +86,8 @@ struct Profile: Codable, Identifiable, Equatable {
     var commandAsControl: Bool = true
     var autoResize: Bool = true
     var resolution: ResolutionMode = .window
+    /// Optional keeps old profiles.json files (without this key) decodable.
+    var legacyTLS: Bool? = nil
 
     var displayName: String {
         if !name.isEmpty { return name }

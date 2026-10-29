@@ -4,6 +4,36 @@ All notable changes are documented here. This project follows semantic
 versioning for public builds. A version is not published until an artifact is
 actually uploaded.
 
+## 1.0.3 Preview
+
+### Fixed
+
+- Connections to Windows servers no longer fail with
+  `FREERDP_ERROR_CONNECT_TRANSPORT_FAILED (0x0002000D)` during CredSSP/NLA.
+  OpenSSL 3 only ships MD4 and RC4 in its optional `legacy` provider, so the
+  NTLM NT hash could not be computed. WinPR's built-in MD4 and RC4 are now
+  compiled in (`WITH_INTERNAL_MD4`/`WITH_INTERNAL_RC4`) and the app needs no
+  provider module. This affects authentication only; TLS and certificate
+  checks are unchanged.
+- The bundled OpenSSL dylibs no longer embed a temporary build prefix
+  (`MODULESDIR: "/tmp/rdpmac-openssl.XXXX/lib/ossl-modules"`), which pointed to a
+  deleted directory and made every provider lookup fail at runtime. A stable
+  `/opt/rdpmac` prefix is compiled in and the install is staged with `DESTDIR`.
+- FreeRDP no longer records a temporary OpenSSL include path in its embedded
+  `WINPR_CFLAGS`.
+
+### Added
+
+- English/Russian local-network usage description so macOS asks for the Local
+  Network permission consistently.
+- Connection diagnostics: after a failed connection the log records the numeric
+  FreeRDP error code and up to 16 warning/error source locations (basename,
+  line, function, level only — no message text, payloads, passwords or
+  clipboard contents).
+- `--selftest` and `make test` verify MD4, MD5, HMAC-MD5, RC4 and the TLS
+  digests/ciphers against RFC and MS-NLMP vectors, in a Finder-like environment
+  without OpenSSL configuration.
+
 ## 1.0.1 Preview
 
 - Explicit NFreeZr author credit and a clickable project repository link in About (EN/RU).

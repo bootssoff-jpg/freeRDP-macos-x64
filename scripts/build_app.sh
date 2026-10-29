@@ -136,6 +136,9 @@ for macho in "$BIN" "$APP/Contents/Frameworks/"*.dylib; do
     if LC_ALL=C grep -aq '/Users/' "$macho"; then
         fail "a build-account path is embedded in $(basename "$macho")"
     fi
+    if LC_ALL=C grep -aq '/tmp/rdpmac-' "$macho"; then
+        fail "a temporary build prefix is embedded in $(basename "$macho")"
+    fi
 done
 
 echo "Signing (ad-hoc, local development only)..."
@@ -156,7 +159,10 @@ for macho in "$BIN" "$APP/Contents/Frameworks/"*.dylib; do
 done
 
 echo "Running bundled self-test..."
-"$BIN" --selftest
+# Prove the bundle works without any inherited OpenSSL configuration, i.e. from
+# Finder, and not only from the shell that ran the build.
+env -u OPENSSL_MODULES -u OPENSSL_CONF -u OPENSSL_CONF_INCLUDE -u OPENSSL_ENGINES \
+    "$BIN" --selftest
 
 echo "Creating unsigned distribution archive..."
 ARCHIVE="$DIST/RDP-Mac-$VERSION-x86_64-unsigned.zip"

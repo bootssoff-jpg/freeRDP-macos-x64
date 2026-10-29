@@ -1,1 +1,2 @@
 "NSHumanReadableCopyright" = "Copyright © 2026 NFreeZr. Independent RDP client built on FreeRDP. FreeRDP and OpenSSL: Apache-2.0.";
+"NSLocalNetworkUsageDescription" = "RDP Mac connects to the remote desktop servers you choose on your local network.";

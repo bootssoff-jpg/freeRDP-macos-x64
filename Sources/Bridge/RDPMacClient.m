@@ -24,6 +24,9 @@
 #include <winpr/synch.h>
 #include <winpr/input.h>
 #include <winpr/version.h>
+#include <winpr/wlog.h>
+#include <winpr/crypto.h>
+#include <winpr/ntlm.h>
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -31,6 +34,55 @@
 
 static NSString *const RDPMacErrorDomain = @"RDPMacErrorDomain";
 static const NSUInteger RDPMacMaxFrameDimension = 8192;
+
+// Only compile-time source locations are retained. Never inspect TextString,
+// FormatString, PrefixString, Data or packet/image payloads from upstream logs.
+NSString *RDPMacDiagnosticLogSite(const wLogMessage *message)
+{
+    if (!message || message->Type != WLOG_MESSAGE_TEXT || message->Level < WLOG_WARN ||
+        !message->FileName || !message->FunctionName)
+        return nil;
+    NSString *file = [[NSString stringWithUTF8String:message->FileName] lastPathComponent];
+    NSString *function = [NSString stringWithUTF8String:message->FunctionName];
+    NSCharacterSet *allowed = [NSCharacterSet characterSetWithCharactersInString:
+        @"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_."];
+    if (!file.length || !function.length || file.length > 128 || function.length > 128 ||
+        [file rangeOfCharacterFromSet:allowed.invertedSet].location != NSNotFound ||
+        [function rangeOfCharacterFromSet:allowed.invertedSet].location != NSNotFound)
+        return nil;
+    return [NSString stringWithFormat:@"FreeRDP site: %@:%lu %@ (level %u)",
+            file, (unsigned long)message->LineNumber, function, message->Level];
+}
+
+static NSString *const RDPMacDiagnosticSitesKey = @"RDPMac.ConnectionDiagnosticSites";
+static BOOL RDPMacCaptureLogSite(const wLogMessage *message)
+{
+    NSMutableArray *sites = NSThread.currentThread.threadDictionary[RDPMacDiagnosticSitesKey];
+    if (sites) {
+        NSString *site = RDPMacDiagnosticLogSite(message);
+        if (site) {
+            if (sites.count >= 16) [sites removeObjectAtIndex:0];
+            [sites addObject:site];
+        }
+    }
+    return TRUE;
+}
+
+static void RDPMacConfigureSafeLogging(void)
+{
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        wLog *root = WLog_GetRoot();
+        if (!root || !WLog_SetLogAppenderType(root, WLOG_APPENDER_CALLBACK)) return;
+        wLogCallbacks callbacks = {0};
+        callbacks.message = RDPMacCaptureLogSite;
+        wLogAppender *appender = WLog_GetLogAppender(root);
+        if (appender) {
+            (void)WLog_ConfigureAppender(appender, "callbacks", &callbacks);
+            (void)WLog_SetLogLevel(root, WLOG_WARN);
+        }
+    });
+}
 
 static NSString *RDPMacErrorText(UINT32 code)
 {
@@ -808,6 +860,7 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
     RDP_CLIENT_ENTRY_POINTS entryPoints = {0};
     if (RDPMacClientEntry(&entryPoints) != 0)
         return @"FAIL: RDP client entry points";
+    RDPMacConfigureSafeLogging();
     rdpContext *context = freerdp_client_context_new(&entryPoints);
     if (!context)
         return @"FAIL: freerdp_client_context_new";
@@ -831,6 +884,37 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
     if (![ansiBack isEqualToString:cyrillic])
         return @"FAIL: CF_TEXT roundtrip";
     [report appendString:@"clipboard CF_TEXT: OK\n"];
+
+    // CredSSP/NLA hashes the password with MD4, which OpenSSL 3 only provides
+    // through the optional legacy provider. Without it every NTLM handshake
+    // fails and the connection ends with an opaque transport error. Verify the
+    // compiled-in implementation with the MS-NLMP reference values instead.
+    static const unsigned char expectedNtHash[WINPR_MD4_DIGEST_LENGTH] = {
+        0xa4, 0xf4, 0x9c, 0x40, 0x65, 0x10, 0xbd, 0xca,
+        0xb6, 0x82, 0x4e, 0xe7, 0xc3, 0x0f, 0xd8, 0x52};
+    unsigned char ntHash[WINPR_MD4_DIGEST_LENGTH] = {0};
+    if (!NTOWFv1A("Password", 8, ntHash) ||
+        memcmp(ntHash, expectedNtHash, sizeof(ntHash)) != 0)
+        return @"FAIL: NTLM NT hash (MD4) is unavailable; CredSSP/NLA would fail";
+    [report appendString:@"NTLM NT hash (MD4): OK\n"];
+
+    unsigned char md5[WINPR_MD5_DIGEST_LENGTH] = {0};
+    if (!winpr_Digest(WINPR_MD_MD5, "abc", 3, md5, sizeof(md5)))
+        return @"FAIL: MD5 is unavailable (NTLM message signing)";
+    [report appendString:@"NTLM message signing digest (MD5): OK\n"];
+
+    // RDP standard security mode encrypts with RC4, also a legacy-provider
+    // algorithm in OpenSSL 3.
+    WINPR_RC4_CTX *rc4 = winpr_RC4_New("Key", 3);
+    if (!rc4)
+        return @"FAIL: RC4 is unavailable (RDP standard security)";
+    unsigned char stream[16] = {0};
+    const BOOL rc4Ok = winpr_RC4_Update(rc4, sizeof(stream), stream, stream);
+    winpr_RC4_Free(rc4);
+    if (!rc4Ok)
+        return @"FAIL: RC4 is unavailable (RDP standard security)";
+    [report appendString:@"RDP standard security cipher (RC4): OK\n"];
+
     [report appendString:@"RESULT: OK\n"];
     return report;
 }
@@ -981,6 +1065,7 @@ static NSError *RDPMacClientError(NSString *message)
         return NO;
     }
 
+    RDPMacConfigureSafeLogging();
     rdpContext *context = freerdp_client_context_new(&entryPoints);
     if (!context) {
         if (error)
@@ -1148,9 +1233,14 @@ static NSError *RDPMacClientError(NSString *message)
             return;
         }
 
+        NSMutableArray<NSString *> *sites = [NSMutableArray array];
+        NSThread.currentThread.threadDictionary[RDPMacDiagnosticSitesKey] = sites;
         BOOL connected = freerdp_connect(instance);
+        [NSThread.currentThread.threadDictionary removeObjectForKey:RDPMacDiagnosticSitesKey];
         UINT32 errorCode = connected ? FREERDP_ERROR_SUCCESS : freerdp_get_last_error(instance->context);
         if (!connected) {
+            for (NSString *site in sites) [self logMessage:site level:2];
+            [self logMessage:[NSString stringWithFormat:@"FreeRDP connect error: 0x%08X", errorCode] level:2];
             _lastErrorWasTLS =
                 !_certificateRejected && errorCode == FREERDP_ERROR_TLS_CONNECT_FAILED;
             NSString *message = _certificateRejected

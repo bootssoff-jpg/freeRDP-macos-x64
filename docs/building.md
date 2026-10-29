@@ -37,13 +37,20 @@ Or step by step:
 `scripts/build_openssl.sh` verifies the SHA-256 of the OpenSSL tarball, builds
 with `-mmacosx-version-min=12.0`, and rejects dylibs whose `LC_BUILD_VERSION`
 minimum is newer. OpenSSL's generated Makefile cannot handle a prefix with
-spaces, so the script uses a temporary space-free prefix and copies the install
-into `vendor/openssl-install`.
+spaces, so a stable space-free prefix (`/opt/rdpmac`) is compiled in while the
+actual install is staged with `DESTDIR` and copied into `vendor/openssl-install`.
+The script rejects any shipped dylib that still embeds a temporary build path:
+a `/tmp` prefix would make OpenSSL look for its config and provider modules in a
+directory that no longer exists.
 
 `scripts/build_freerdp.sh` builds only static client libraries and the CLIPRDR,
 DisplayControl and DRDYNVC channels. X11, SDL, FFmpeg, audio, rdpdr, smartcards,
 RAIL and RDPGFX are intentionally disabled. The exact CMake flags are the
-source of truth in that script.
+source of truth in that script. `WITH_INTERNAL_MD4` and `WITH_INTERNAL_RC4` are
+always on: OpenSSL 3 keeps MD4 and RC4 in the optional legacy provider module,
+but NTLM (and therefore CredSSP/NLA) needs MD4 for the NT hash and RDP standard
+security needs RC4. The bundle ships no provider modules, so enabling the
+built-in implementations keeps the app relocatable and self-contained.
 
 ## Bundle contents
 

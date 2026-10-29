@@ -10,6 +10,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <winpr/wlog.h>
+extern NSString *RDPMacDiagnosticLogSite(const wLogMessage *message);
 
 @interface RDPMacClient (FrameTest)
 - (void)framebufferConfigureWithWidth:(size_t)width height:(size_t)height;
@@ -111,7 +113,33 @@ static void testConcurrentConnections(void)
 int main(void)
 {
     @autoreleasepool {
-        printf("%s", RDPMacClient.selfTestReport.UTF8String);
+        NSString *selfTest = RDPMacClient.selfTestReport;
+        printf("%s", selfTest.UTF8String);
+        expect([selfTest hasSuffix:@"RESULT: OK\n"],
+               @"self-test completes without a failed subsystem");
+        expect([selfTest containsString:@"NTLM NT hash (MD4): OK"],
+               @"self-test proves the NTLM/CredSSP MD4 implementation works");
+        expect([selfTest containsString:@"RDP standard security cipher (RC4): OK"],
+               @"self-test proves the RC4 implementation works");
+        wLogMessage diagnostic = {0};
+        diagnostic.Type = WLOG_MESSAGE_TEXT;
+        diagnostic.Level = WLOG_ERROR;
+        diagnostic.FileName = "/private/build/example/transport.c";
+        diagnostic.FunctionName = "transport_connect_nla";
+        diagnostic.LineNumber = 42;
+        diagnostic.TextString = "PRIVATE_PASSWORD_AND_CLIPBOARD_SENTINEL";
+        diagnostic.FormatString = diagnostic.TextString;
+        diagnostic.PrefixString = (char *)diagnostic.TextString;
+        NSString *site = RDPMacDiagnosticLogSite(&diagnostic);
+        expect([site containsString:@"transport.c:42 transport_connect_nla"],
+               @"diagnostics retain the failing upstream source location");
+        expect(![site containsString:@"PRIVATE_"] && ![site containsString:@"/private/"],
+               @"diagnostics discard message payloads and absolute source paths");
+        diagnostic.Type = WLOG_MESSAGE_DATA;
+        expect(RDPMacDiagnosticLogSite(&diagnostic) == nil, @"binary upstream logs are discarded");
+        diagnostic.Type = WLOG_MESSAGE_TEXT;
+        diagnostic.FunctionName = "invalid function with payload";
+        expect(RDPMacDiagnosticLogSite(&diagnostic) == nil, @"unexpected source metadata is discarded");
         testConcurrentConnections();
 
         {

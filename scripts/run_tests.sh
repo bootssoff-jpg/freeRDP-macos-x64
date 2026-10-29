@@ -52,6 +52,19 @@ clang "${CFLAGS[@]}" "$ROOT/Tests/clipboard_protocol_tests.m" \
 clang "${CFLAGS[@]}" "$ROOT/Tests/bridge_lifecycle.m" \
     "$OBJ/RDPMacModels.o" "$OBJ/RDPMacClipboardText.o" "$OBJ/RDPMacClipboard.o" \
     "$OBJ/RDPMacClient.o" -o "$BUILD/bridge_lifecycle" "${LDFLAGS[@]}"
+clang "${CFLAGS[@]}" "$ROOT/Tests/crypto_tests.m" \
+    -o "$BUILD/crypto_tests" "${LDFLAGS[@]}"
+
+echo "== Connection cryptography (NTLM/CredSSP, TLS primitives) =="
+# env -i mimics a Finder launch: no OpenSSL configuration is inherited from the
+# shell that ran the build. This is where a missing MD4 implementation showed up
+# as an opaque FREERDP_ERROR_CONNECT_TRANSPORT_FAILED during CredSSP.
+if ! env -i HOME="$HOME" PATH=/usr/bin:/bin "$BUILD/crypto_tests" \
+        >"$BUILD/crypto.log" 2>&1; then
+    grep -E 'FAIL|RESULT|ERROR' "$BUILD/crypto.log" >&2
+    exit 1
+fi
+grep -E 'RESULT|NTLM|RC4' "$BUILD/crypto.log"
 
 echo "== Bridge self-test and lifecycle =="
 "$BUILD/bridge_lifecycle" >"$BUILD/lifecycle.log" 2>&1 || {
@@ -92,7 +105,8 @@ RDPMAC_LANGUAGE=en "$BUILD/session_windows" | tail -5
 echo "== Bundled app self-test (if built) =="
 APP_BIN="$ROOT/build/RDP Mac.app/Contents/MacOS/RDPMac"
 if [ -x "$APP_BIN" ]; then
-    "$APP_BIN" --selftest
+    env -u OPENSSL_MODULES -u OPENSSL_CONF -u OPENSSL_CONF_INCLUDE -u OPENSSL_ENGINES \
+        "$APP_BIN" --selftest
 else
     echo "app not built yet; run scripts/build_app.sh"
 fi

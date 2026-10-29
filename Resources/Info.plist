@@ -21,9 +21,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.1</string>
+    <string>1.0.3</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>5</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>LSMinimumSystemVersion</key>
@@ -34,6 +34,8 @@
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 NFreeZr. Independent RDP client built on FreeRDP. FreeRDP and OpenSSL: Apache-2.0.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>RDP Mac connects to the remote desktop servers you choose on your local network.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key>

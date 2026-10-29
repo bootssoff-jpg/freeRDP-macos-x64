@@ -16,6 +16,12 @@ PINNED_COMMIT="97eff6ddfbbfaa8e42a126d362686bd001ff8bdc"
 PINNED_TAG="3.32.2"
 MIN_MACOS="12.0"
 OPENSSL_PREFIX="$VENDOR/openssl-install"
+# OpenSSL 3 keeps MD4 and RC4 in the optional legacy provider, which is a
+# separate module. Shipping it would add a dynamically loaded provider to the
+# app bundle. WinPR can instead compile both algorithms in; MD4 is required by
+# the NTLM NT hash (CredSSP/NLA) and RC4 by RDP standard security. Both are
+# protocol requirements, not a way to weaken TLS or certificate checks.
+WINPR_INTERNAL_CRYPTO="MD4,RC4"
 
 FORCE=0
 if [ "${1:-}" = "--force" ]; then
@@ -31,12 +37,13 @@ if [ -f "$INSTALL/lib/libfreerdp-client3.a" ] &&
    [ -f "$INSTALL/.rdpmac-build-info" ] && [ "$FORCE" -eq 0 ]; then
     if grep -q "FreeRDP_COMMIT=$PINNED_COMMIT" "$INSTALL/.rdpmac-build-info" &&
        grep -q "BUILD_ARCH=x86_64" "$INSTALL/.rdpmac-build-info" &&
+       grep -q "WINPR_INTERNAL_CRYPTO=$WINPR_INTERNAL_CRYPTO" "$INSTALL/.rdpmac-build-info" &&
        grep -Fq "OPENSSL_PREFIX=$OPENSSL_PREFIX" "$INSTALL/.rdpmac-build-info" &&
        lipo -info "$INSTALL/lib/libfreerdp-client3.a" 2>/dev/null | grep -q x86_64; then
         echo "FreeRDP $PINNED_TAG (x86_64) already built at $INSTALL (use --force to rebuild)."
         exit 0
     fi
-    echo "Existing FreeRDP build does not match the pinned version/architecture/OpenSSL; rebuilding."
+    echo "Existing FreeRDP build does not match the pinned version/architecture/crypto/OpenSSL; rebuilding."
 fi
 
 # Build or reuse the project-local OpenSSL. A Homebrew bottle on Intel may
@@ -66,8 +73,11 @@ fi
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
-# The explicit -I for OpenSSL is required: on Intel Homebrew installations
-# /usr/local/include/openssl may point to OpenSSL 4, while CMake links OpenSSL 3.
+# The explicit OpenSSL include/library paths are passed through OPENSSL_* so
+# that /usr/local/include/openssl (possibly OpenSSL 4 on Intel Homebrew) cannot
+# shadow the vendored OpenSSL 3. They are deliberately *not* put into
+# CMAKE_C_FLAGS: FreeRDP bakes CFLAGS into WINPR_CFLAGS, which would leak the
+# temporary space-free symlink path into the release binary.
 CMAKE_FLAGS=(
     -S "$SRC"
     -B "$BUILD"
@@ -80,7 +90,6 @@ CMAKE_FLAGS=(
     # Neutral baked-in prefix: the actual install goes to vendor/freerdp-install
     # via --prefix below, so release binaries do not embed the builder's home path.
     -DCMAKE_INSTALL_PREFIX="/opt/rdpmac"
-    -DCMAKE_C_FLAGS="-I$OPENSSL_BUILD_PREFIX/include"
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
     -DBUILD_SHARED_LIBS=OFF
     -DBUILD_TESTING=OFF
@@ -107,6 +116,12 @@ CMAKE_FLAGS=(
     -DWITH_CLIENT_CHANNELS=ON
     -DWITH_JSON_DISABLED=ON
     -DWITH_AAD=OFF
+    # MD4/RC4 are not part of the OpenSSL 3 default provider. Compile WinPR's
+    # implementations in so NTLM (CredSSP/NLA) and RDP standard security work in
+    # a self-contained bundle without a runtime legacy provider module.
+    -DWITH_INTERNAL_MD4=ON
+    -DWITH_INTERNAL_RC4=ON
+    -DWITH_INTERNAL_MD5=OFF
     -DCHANNEL_CLIPRDR=ON
     -DCHANNEL_DISP=ON
     -DCHANNEL_DRDYNVC=ON
@@ -171,6 +186,29 @@ if nm -u "$INSTALL/lib/libfreerdp3.a" 2>/dev/null | grep -q OPENSSL_sk_set_cmp_t
     fail "FreeRDP was compiled against OpenSSL 4 headers; ABI mismatch with OpenSSL 3"
 fi
 
+# CredSSP/NLA hashes the password with MD4, which OpenSSL 3 only offers through
+# the legacy provider module. Verify that WinPR's built-in MD4/RC4 were compiled
+# in, otherwise the connection fails at runtime with an opaque
+# FREERDP_ERROR_CONNECT_TRANSPORT_FAILED. Symbol tables are compared in bash:
+# `nm ... | grep -q` would report a pipefail error once grep exits early.
+WINPR_CONFIG="$INSTALL/include/winpr3/winpr/config.h"
+for symbol in WITH_INTERNAL_MD4 WITH_INTERNAL_RC4; do
+    grep -q "^#define $symbol" "$WINPR_CONFIG" ||
+        fail "WinPR was built without $symbol; NTLM/CredSSP would fail at runtime"
+done
+case "$(nm "$INSTALL/lib/libwinpr3.a" 2>/dev/null)" in
+    *"_winpr_MD4_Init"*) ;;
+    *) fail "libwinpr3.a does not contain the compiled-in MD4 implementation" ;;
+esac
+
+# FreeRDP stores its CFLAGS in WINPR_CFLAGS/FREERDP_CFLAGS. A build-only path
+# there would end up in the release executable, so reject it here.
+for archive in "$INSTALL/lib/libwinpr3.a" "$INSTALL/lib/libfreerdp3.a"; do
+    case "$(strings -a "$archive")" in
+        *"/tmp/rdpmac-"*) fail "$(basename "$archive") embeds a temporary build path" ;;
+    esac
+done
+
 OPENSSL_VERSION_STRING="$("$OPENSSL_PREFIX/bin/openssl" version 2>/dev/null || true)"
 if [ -z "$OPENSSL_VERSION_STRING" ] && [ -f "$OPENSSL_PREFIX/.rdpmac-build-info" ]; then
     OPENSSL_VERSION_STRING="$(grep '^OPENSSL_VERSION=' "$OPENSSL_PREFIX/.rdpmac-build-info" |
@@ -185,6 +223,7 @@ fi
     echo "MIN_MACOS=$MIN_MACOS"
     echo "OPENSSL_PREFIX=$OPENSSL_PREFIX"
     echo "OPENSSL_VERSION=$OPENSSL_VERSION_STRING"
+    echo "WINPR_INTERNAL_CRYPTO=$WINPR_INTERNAL_CRYPTO"
     echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } >"$INSTALL/.rdpmac-build-info"
 

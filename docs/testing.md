@@ -18,11 +18,17 @@ No RDP server is required. The suite builds the Objective-C bridge and runs:
 - `Tests/bridge_lifecycle.m` — argument validation, a real TCP failure to
   `127.0.0.1:1`, `Failed` state/message, second start on the same client,
   release, fresh client, and a framebuffer capacity check when height grows.
+- `Tests/crypto_tests.m` — runs with a Finder-like empty environment and checks
+  the primitives the connection needs: RFC 1320 MD4, MS-NLMP `NTOWFv1`/`NTOWFv2`,
+  RFC 2202 HMAC-MD5, the RC4 stream vector, and TLS digests/ciphers. A missing
+  MD4 (OpenSSL 3 legacy provider) fails here instead of surfacing later as
+  `FREERDP_ERROR_CONNECT_TRANSPORT_FAILED`.
 - `Tests/session_windows.swift` — independent windows, menu target switching,
   closing one window without losing another, shutdown completion, group/search
   ordering, and decoding older profiles without a `group` key.
-- `--selftest` inside the app — embedded FreeRDP/OpenSSL load and the text
-  codecs work without network access.
+- `--selftest` inside the app — embedded FreeRDP/OpenSSL load, the NTLM MD4 and
+  RC4 implementations match their reference values, and the text codecs work
+  without network access.
 
 The tests do **not** prove NLA authentication, real Windows CLIPRDR behavior,
 server policy, or display scaling on a live session.

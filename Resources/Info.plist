@@ -33,7 +33,7 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Independent RDP client built on FreeRDP. FreeRDP and OpenSSL: Apache-2.0.</string>
+    <string>Copyright © 2026 NFreeZr. Independent RDP client built on FreeRDP. FreeRDP and OpenSSL: Apache-2.0.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key>

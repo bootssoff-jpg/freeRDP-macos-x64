@@ -125,6 +125,8 @@ to Apple. See [release packaging](docs/releasing.md).
 
 ## Credits and license
 
+**Author:** NFreeZr.
+
 Application code: [MIT](LICENSE). FreeRDP and OpenSSL: Apache-2.0; licenses and
 [third-party notices](THIRD_PARTY_NOTICES.md) are included in the app.
 RDP Mac is independent and is not endorsed by Microsoft or the FreeRDP project.

@@ -126,6 +126,8 @@ make dist    # ZIP + DMG + SHA256SUMS
 
 ## Благодарности и лицензия
 
+**Автор:** NFreeZr.
+
 Код приложения — [MIT](LICENSE). FreeRDP и OpenSSL — Apache-2.0; лицензии и
 [уведомления](THIRD_PARTY_NOTICES.md) включены в приложение.
 RDP Mac — независимый проект, не одобренный Microsoft или FreeRDP.

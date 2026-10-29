@@ -11,7 +11,8 @@ final class RDPView: NSView {
     private var remoteHeight = 0
     private var tracking: NSTrackingArea?
 
-    override var isFlipped: Bool { true }
+    // Use the standard (bottom-left) AppKit coordinate system: CGImage is
+    // drawn upright there. Mouse coordinates are converted explicitly below.
     override var acceptsFirstResponder: Bool { true }
     override func becomeFirstResponder() -> Bool { true }
 
@@ -124,8 +125,9 @@ final class RDPView: NSView {
             needsDisplay = true
             return
         }
+        // remoteRect uses top-left origin; the view uses bottom-left.
         let viewRect = NSRect(x: imageRect.minX + remoteRect.minX * scale,
-                              y: imageRect.minY + remoteRect.minY * scale,
+                              y: imageRect.maxY - remoteRect.maxY * scale,
                               width: remoteRect.width * scale,
                               height: remoteRect.height * scale)
         setNeedsDisplay(viewRect.insetBy(dx: -2, dy: -2))
@@ -140,7 +142,8 @@ final class RDPView: NSView {
         }
         let point = convert(event.locationInWindow, from: nil)
         let normalizedX = (point.x - rect.minX) / rect.width
-        let normalizedY = (point.y - rect.minY) / rect.height
+        // AppKit y grows upward; the remote framebuffer y grows downward.
+        let normalizedY = (rect.maxY - point.y) / rect.height
         let x = Int((normalizedX * CGFloat(remoteWidth)).rounded(.down))
         let y = Int((normalizedY * CGFloat(remoteHeight)).rounded(.down))
         return (max(0, min(x, remoteWidth - 1)), max(0, min(y, remoteHeight - 1)))

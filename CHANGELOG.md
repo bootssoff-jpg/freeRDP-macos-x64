@@ -6,6 +6,21 @@ actually uploaded.
 
 ## Unreleased
 
+### Added
+
+- Duplicate a saved connection (manager context menu, toolbar button or ⌘⇧D
+  while the manager is frontmost). The editor opens with an unsaved copy: new
+  identity, same group and settings, and the same account record, so changing
+  only the address keeps the saved password. Cancelling writes nothing.
+- Shared account directory (`credentials.json`, title/user/domain only) with
+  add, edit, copy and delete. Passwords stay in the Keychain under
+  `credential/<uuid>`, so they no longer depend on the server address. One
+  record can serve several connections; the UI warns before editing or deleting
+  a shared record.
+- Migration of existing host-keyed passwords happens lazily and idempotently:
+  the secret already read for the form is copied into a new account item, the
+  profile is linked only after a verified write, and old Keychain items are kept.
+
 ### Fixed
 
 - Actions → **Ctrl+Alt+Del** now reaches the Windows security screen. The

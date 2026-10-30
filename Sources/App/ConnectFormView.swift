@@ -13,6 +13,7 @@ struct ConnectionRequest {
     let resolution: ResolutionMode
     let savePassword: Bool
     let profileID: UUID?
+    let credentialID: UUID?
     let legacyTLS: Bool
 
     func withLegacyTLS() -> ConnectionRequest {
@@ -28,6 +29,7 @@ struct ConnectionRequest {
                           resolution: resolution,
                           savePassword: savePassword,
                           profileID: profileID,
+                          credentialID: credentialID,
                           legacyTLS: true)
     }
 }
@@ -40,6 +42,12 @@ final class ConnectFormView: NSView {
     var onProfileSelected: ((UUID?) -> Void)?
     var onShowDiagnostics: (() -> Void)?
     var onShowLog: (() -> Void)?
+    var onManageCredentials: (() -> Void)?
+    var onCredentialSelectionChanged: ((UUID?) -> Void)?
+
+    /// Directory used for status text and password availability. Overridable so
+    /// tests never touch the real Keychain.
+    var credentialStore: CredentialStore = .shared
 
     private let profilePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let saveProfileButton = UI.button(L("Сохранить профиль"), target: nil, action: nil)
@@ -47,6 +55,9 @@ final class ConnectFormView: NSView {
     private let groupField = UI.textField(placeholder: L("Например: Работа или Дом"), width: 300)
     private let hostField = UI.textField(placeholder: "server.example.local", width: 300)
     private let portField = UI.textField(placeholder: "3389", width: 70)
+    private let credentialPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let manageCredentialsButton = UI.button(L("Справочник…"), target: nil, action: nil)
+    private let credentialStatusLabel = UI.label("", size: 11, color: .secondaryLabelColor)
     private let usernameField = UI.textField(placeholder: L("Пользователь"), width: 220)
     private let domainField = UI.textField(placeholder: L("Домен (необязательно)"), width: 200)
     private let passwordField = UI.secureField(placeholder: L("Пароль"), width: 300)
@@ -75,7 +86,11 @@ final class ConnectFormView: NSView {
     private var advancedView: NSView?
     private var advancedToggle: NSButton?
     private var profiles: [Profile] = []
+    private var credentials: [Credential] = []
     private var selectedProfileID: UUID?
+    private var selectedCredentialID: UUID?
+    private var credentialsProgrammatic = false
+    private var isDraft = false
     private var programmaticSelection = false
 
     override init(frame frameRect: NSRect) {
@@ -102,6 +117,10 @@ final class ConnectFormView: NSView {
         saveProfileButton.action = #selector(saveProfile(_:))
         deleteProfileButton.target = self
         deleteProfileButton.action = #selector(deleteProfile(_:))
+        credentialPopup.target = self
+        credentialPopup.action = #selector(credentialChanged(_:))
+        manageCredentialsButton.target = self
+        manageCredentialsButton.action = #selector(manageCredentials(_:))
         forgetPasswordButton.target = self
         forgetPasswordButton.action = #selector(forgetPassword(_:))
         connectButton.target = self
@@ -127,6 +146,7 @@ final class ConnectFormView: NSView {
 
         let profileRow = UI.hStack([profilePopup, saveProfileButton, deleteProfileButton])
         let serverRow = UI.hStack([hostField, UI.label(L("Порт")), portField])
+        let credentialRow = UI.hStack([credentialPopup, manageCredentialsButton], spacing: 8)
         let userRow = UI.hStack([usernameField, UI.label(L("Домен")), domainField])
         let passwordRow = UI.hStack([passwordField, savePasswordCheckbox, forgetPasswordButton])
         let securityRow = UI.hStack([securityPopup])
@@ -143,6 +163,8 @@ final class ConnectFormView: NSView {
             [UI.label(L("Профиль"), weight: .medium), profileRow],
             [UI.label(L("Группа"), weight: .medium), groupField],
             [UI.label(L("Сервер"), weight: .medium), serverRow],
+            [UI.label(L("Учётная запись"), weight: .medium), credentialRow],
+            [NSGridCell.emptyContentView, credentialStatusLabel],
             [UI.label(L("Пользователь"), weight: .medium), userRow],
             [UI.label(L("Пароль"), weight: .medium), passwordRow]
         ])
@@ -169,6 +191,8 @@ final class ConnectFormView: NSView {
                                (passwordField, L("Пароль")), (groupField, L("Группа"))] {
             field.setAccessibilityLabel(label)
         }
+        credentialPopup.setAccessibilityLabel(L("Учётная запись"))
+        manageCredentialsButton.toolTip = L("Добавить, изменить или удалить сохранённые учётные записи")
 
         let hint = UI.label(L("Пароль не сохраняется в JSON-профиле. Keychain используется только при ")
                             + L("явном согласии. Проверка сертификата включена всегда."),
@@ -211,7 +235,33 @@ final class ConnectFormView: NSView {
             profilePopup.selectItem(at: 0)
         }
         programmaticSelection = false
-        deleteProfileButton.isEnabled = self.selectedProfileID != nil
+        deleteProfileButton.isEnabled = !isDraft && self.selectedProfileID != nil
+    }
+
+    /// Fills the account popup. Index 0 keeps the profile on manually entered
+    /// credentials, the rest map to the shared user directory.
+    func setCredentials(_ credentials: [Credential], selectedID: UUID?) {
+        self.credentials = credentials
+        selectedCredentialID = selectedID
+        credentialsProgrammatic = true
+        credentialPopup.removeAllItems()
+        credentialPopup.addItem(withTitle: L("Ввести вручную"))
+        for credential in credentials {
+            let account = credential.accountName
+            let title = account.isEmpty ? credential.displayName
+                : "\(credential.displayName) — \(account)"
+            credentialPopup.addItem(withTitle: title)
+        }
+        if let selectedID, let index = credentials.firstIndex(where: { $0.id == selectedID }) {
+            credentialPopup.selectItem(at: index + 1)
+        } else {
+            selectedCredentialID = nil
+            credentialPopup.selectItem(at: 0)
+        }
+        credentialsProgrammatic = false
+        usernameField.isEnabled = selectedCredentialID == nil
+        domainField.isEnabled = selectedCredentialID == nil
+        updateCredentialStatus()
     }
 
     func applyProfile(_ profile: Profile, password: String?) {
@@ -230,18 +280,33 @@ final class ConnectFormView: NSView {
         autoResizeCheckbox.state = profile.autoResize ? .on : .off
         legacyTLSCheckbox.state = (profile.legacyTLS ?? false) ? .on : .off
         savePasswordCheckbox.state = profile.savePassword ? .on : .off
-        passwordField.stringValue = password ?? ""
         selectedProfileID = profile.id
+        isDraft = false
+        saveProfileButton.title = L("Сохранить профиль")
         if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
             programmaticSelection = true
             profilePopup.selectItem(at: index + 1)
             programmaticSelection = false
         }
-        deleteProfileButton.isEnabled = true
+        deleteProfileButton.isEnabled = !isDraft && selectedProfileID != nil
+        applyCredentialSelection(profile.credentialID)
+        passwordField.stringValue = password ?? ""
+    }
+
+    /// Applies a copy produced by "Duplicate". It is not in the profile store
+    /// yet, so it cannot be deleted and must be saved with a new identity.
+    func applyDraft(_ profile: Profile, password: String?) {
+        applyProfile(profile, password: password)
+        isDraft = true
+        selectedProfileID = profile.id
+        deleteProfileButton.isEnabled = false
+        saveProfileButton.title = L("Сохранить копию")
     }
 
     func clearProfileSelection() {
         selectedProfileID = nil
+        isDraft = false
+        saveProfileButton.title = L("Сохранить профиль")
         programmaticSelection = true
         profilePopup.selectItem(at: 0)
         programmaticSelection = false
@@ -255,6 +320,7 @@ final class ConnectFormView: NSView {
                 port: Int(portField.stringValue) ?? 3389,
                 username: usernameField.stringValue,
                 domain: domainField.stringValue,
+                credentialID: selectedCredentialID,
                 security: selectedSecurity,
                 savePassword: savePasswordCheckbox.state == .on,
                 clipboardEnabled: clipboardCheckbox.state == .on,
@@ -267,12 +333,23 @@ final class ConnectFormView: NSView {
 
     var selectedProfile: UUID? { selectedProfileID }
     var currentPassword: String { passwordField.stringValue }
+    var currentCredential: UUID? { selectedCredentialID }
+    var isDraftProfile: Bool { isDraft }
 
     var currentAccount: String {
-        KeychainStore.account(host: hostField.stringValue,
-                              port: Int(portField.stringValue) ?? 3389,
-                              domain: domainField.stringValue,
-                              username: usernameField.stringValue)
+        if let selectedCredentialID {
+            return CredentialStore.keychainAccount(for: selectedCredentialID)
+        }
+        return KeychainStore.account(host: hostField.stringValue,
+                                     port: Int(portField.stringValue) ?? 3389,
+                                     domain: domainField.stringValue,
+                                     username: usernameField.stringValue)
+    }
+
+    /// Directory record shown in the form, if the user picked one.
+    var selectedCredentialRecord: Credential? {
+        guard let selectedCredentialID else { return nil }
+        return credentials.first { $0.id == selectedCredentialID }
     }
 
     func clearPassword() {
@@ -295,13 +372,17 @@ final class ConnectFormView: NSView {
     func setBusy(_ busy: Bool, message: String? = nil) {
         connectButton.isEnabled = !busy
         saveProfileButton.isEnabled = !busy
-        deleteProfileButton.isEnabled = !busy && selectedProfileID != nil
+        deleteProfileButton.isEnabled = !busy && !isDraft && selectedProfileID != nil
         profilePopup.isEnabled = !busy
         groupField.isEnabled = !busy
         hostField.isEnabled = !busy
         portField.isEnabled = !busy
-        usernameField.isEnabled = !busy
-        domainField.isEnabled = !busy
+        credentialPopup.isEnabled = !busy
+        manageCredentialsButton.isEnabled = !busy
+        // A manual account keeps its editable user/domain fields; a directory
+        // record owns them and must stay read-only here.
+        usernameField.isEnabled = !busy && selectedCredentialID == nil
+        domainField.isEnabled = !busy && selectedCredentialID == nil
         passwordField.isEnabled = !busy
         securityPopup.isEnabled = !busy
         resolutionPopup.isEnabled = !busy
@@ -336,8 +417,61 @@ final class ConnectFormView: NSView {
         }
         let profile = profiles[index - 1]
         selectedProfileID = profile.id
-        deleteProfileButton.isEnabled = true
+        deleteProfileButton.isEnabled = !isDraft
         onProfileSelected?(profile.id)
+    }
+
+    @objc private func credentialChanged(_ sender: NSPopUpButton) {
+        guard !credentialsProgrammatic else { return }
+        let index = sender.indexOfSelectedItem
+        selectedCredentialID = index > 0 ? credentials[index - 1].id : nil
+        applyCredentialSelection(selectedCredentialID, clearPassword: true, notify: true)
+    }
+
+    @objc private func manageCredentials(_ sender: Any?) {
+        onManageCredentials?()
+    }
+
+    /// Applies a directory record (or manual mode) to the form. Switching the
+    /// account clears the password field so a password of the previous user is
+    /// never reused; read-only fields follow the record.
+    private func applyCredentialSelection(_ id: UUID?, clearPassword: Bool = false,
+                                          notify: Bool = false) {
+        selectedCredentialID = id
+        credentialsProgrammatic = true
+        if let id, let index = credentials.firstIndex(where: { $0.id == id }) {
+            credentialPopup.selectItem(at: index + 1)
+            let credential = credentials[index]
+            usernameField.stringValue = credential.username
+            domainField.stringValue = credential.domain
+        } else {
+            selectedCredentialID = nil
+            credentialPopup.selectItem(at: 0)
+        }
+        credentialsProgrammatic = false
+        usernameField.isEnabled = selectedCredentialID == nil
+        domainField.isEnabled = selectedCredentialID == nil
+        if clearPassword { passwordField.stringValue = "" }
+        updateCredentialStatus()
+        if notify { onCredentialSelectionChanged?(selectedCredentialID) }
+    }
+
+    private func updateCredentialStatus() {
+        guard let credential = selectedCredentialRecord else {
+            credentialStatusLabel.stringValue = L("Логин и пароль вводятся вручную и не сохраняются в справочнике.")
+            credentialStatusLabel.textColor = .secondaryLabelColor
+            return
+        }
+        if credentialStore.hasPassword(credential) {
+            credentialStatusLabel.stringValue =
+                L("Пароль «%@» сохранён в Keychain и общий для всех подключений этой записи.",
+                  credential.displayName)
+            credentialStatusLabel.textColor = .secondaryLabelColor
+        } else {
+            credentialStatusLabel.stringValue =
+                L("Для «%@» нет сохранённого пароля. Введите его здесь.", credential.displayName)
+            credentialStatusLabel.textColor = .systemOrange
+        }
     }
 
     @objc private func saveProfile(_ sender: Any?) {
@@ -414,6 +548,7 @@ final class ConnectFormView: NSView {
                                         resolution: selectedResolution,
                                         savePassword: savePasswordCheckbox.state == .on,
                                         profileID: selectedProfileID,
+                                        credentialID: selectedCredentialID,
                                         legacyTLS: legacyTLSCheckbox.state == .on)
         onConnect?(request)
     }

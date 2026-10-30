@@ -3,13 +3,14 @@ import AppKit
 /// Saved profiles are shared; each launch creates an independent session window.
 final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
                                          NSTableViewDataSource, NSTableViewDelegate,
-                                         NSSearchFieldDelegate {
+                                         NSSearchFieldDelegate, NSMenuDelegate {
     enum Row {
         case group(String)
         case profile(Profile)
     }
     var profilesProvider: () -> [Profile] = { ProfileStore.shared.profiles }
     var onEdit: ((Profile) -> Void)?
+    var onDuplicate: ((Profile) -> Void)?
     private var collapsedGroups: Set<String> = []
     var onOpen: ((Profile) -> Void)?
     var onNew: (() -> Void)?
@@ -19,6 +20,7 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
     private let search = NSSearchField()
     private let openButton = UI.button(L("Открыть выбранные"), target: nil, action: nil)
     private let editButton = UI.button(L("Изменить профиль"), target: nil, action: nil)
+    private let duplicateButton = UI.button(L("Дублировать"), target: nil, action: nil)
     private let emptyLabel = UI.label(L("Нет подключений. Нажмите «Новое подключение» и сохраните профиль."),
                                       size: 13, color: .secondaryLabelColor, lines: 2)
     private(set) var rows: [Row] = []
@@ -51,13 +53,15 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
         let new = UI.button(L("Новое подключение"), target: self, action: #selector(newConnection(_:)))
         editButton.target = self
         editButton.action = #selector(editSelected(_:))
+        duplicateButton.target = self
+        duplicateButton.action = #selector(duplicateSelected(_:))
         openButton.target = self
         openButton.action = #selector(openSelected(_:))
         search.placeholderString = L("Поиск по имени, серверу, пользователю или группе")
         search.delegate = self
         search.widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
         let toolbar = UI.hStack([title, NSView(), new], spacing: 12)
-        let actions = UI.hStack([search, editButton, openButton], spacing: 12)
+        let actions = UI.hStack([search, editButton, duplicateButton, openButton], spacing: 12)
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
@@ -77,6 +81,9 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
         table.dataSource = self
         table.target = self
         table.doubleAction = #selector(openSelected(_:))
+        let contextMenu = NSMenu()
+        contextMenu.delegate = self
+        table.menu = contextMenu
         let hint = UI.label(L("Двойной щелчок открывает профиль в новом окне. ⌘N — новая сессия. ")
                              + L("Буфер обмена синхронизируется только с активной сессией."),
                             size: 11, color: .secondaryLabelColor, lines: 2)
@@ -137,12 +144,26 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
     }
     private func updateSelectionState() {
         editButton.isEnabled = table.selectedRowIndexes.count == 1
+        duplicateButton.isEnabled = canDuplicateSelection
         openButton.isEnabled = table.selectedRowIndexes.contains { index in
             rows.indices.contains(index) && {
                 if case .profile = rows[index] { return true }
                 return false
             }()
         }
+    }
+
+    /// Exactly one saved profile is selected, so "Duplicate" has a single source.
+    var canDuplicateSelection: Bool {
+        Self.canDuplicate(rows: rows, selection: table.selectedRowIndexes)
+    }
+
+    static func canDuplicate(rows: [Row], selection: IndexSet) -> Bool {
+        guard selection.count == 1, let index = selection.first, rows.indices.contains(index) else {
+            return false
+        }
+        if case .profile = rows[index] { return true }
+        return false
     }
     func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
         if case .group = rows[row] { return true }
@@ -194,11 +215,53 @@ final class ConnectionsWindowController: NSWindowController, NSWindowDelegate,
               rows.indices.contains(index), case .profile(let profile) = rows[index] else { return }
         onEdit?(profile)
     }
+
+    /// Opens the editor with an unsaved copy of the selected profile.
+    @objc func duplicateSelected(_ sender: Any?) {
+        guard canDuplicateSelection, let index = table.selectedRowIndexes.first,
+              rows.indices.contains(index), case .profile(let profile) = rows[index] else { return }
+        onDuplicate?(profile)
+    }
     @objc func openSelected(_ sender: Any?) {
         let profiles = table.selectedRowIndexes.compactMap { index -> Profile? in
             guard rows.indices.contains(index), case .profile(let profile) = rows[index] else { return nil }
             return profile
         }
         for profile in profiles { onOpen?(profile) }
+    }
+
+    // MARK: - Context menu
+
+    private var clickedProfile: Profile? {
+        let index = table.clickedRow
+        guard rows.indices.contains(index), case .profile(let profile) = rows[index] else { return nil }
+        return profile
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard clickedProfile != nil else { return }
+        for (title, action) in [(L("Открыть"), #selector(openClicked(_:))),
+                                (L("Изменить"), #selector(editClicked(_:))),
+                                (L("Дублировать"), #selector(duplicateClicked(_:)))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+    }
+
+    @objc private func openClicked(_ sender: Any?) {
+        guard let profile = clickedProfile else { return }
+        onOpen?(profile)
+    }
+
+    @objc private func editClicked(_ sender: Any?) {
+        guard let profile = clickedProfile else { return }
+        onEdit?(profile)
+    }
+
+    @objc private func duplicateClicked(_ sender: Any?) {
+        guard let profile = clickedProfile else { return }
+        onDuplicate?(profile)
     }
 }

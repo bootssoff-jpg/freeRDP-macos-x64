@@ -10,6 +10,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     private var lastRequest: ConnectionRequest?
     private var diagnosticsController: DiagnosticsWindowController?
     private var logController: LogWindowController?
+    private var credentialsController: CredentialsWindowController?
     private var clipboardDiagnostics = RDPMacClipboardDiagnostics()
     private var resizeTimer: Timer?
     private var sessionActive = false
@@ -56,6 +57,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         formView.onProfileSelected = { [weak self] id in self?.profileSelected(id) }
         formView.onShowDiagnostics = { [weak self] in self?.showDiagnostics(nil) }
         formView.onShowLog = { [weak self] in self?.showLog(nil) }
+        formView.onManageCredentials = { [weak self] in self?.showCredentials(nil) }
 
         sessionView.onDisconnect = { [weak self] in self?.disconnect(nil) }
         sessionView.onCtrlAltDelete = { [weak self] in self?.sendCtrlAltDelete(nil) }
@@ -77,6 +79,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         window.contentView = formView
         window.title = "RDP Mac"
         formView.setProfiles(profileStore.profiles, selectedID: formView.selectedProfile)
+        formView.setCredentials(CredentialStore.shared.credentials,
+                                selectedID: formView.currentCredential)
         if !didInitialProfileSelection {
             didInitialProfileSelection = true
             DispatchQueue.main.async { [weak self] in
@@ -115,21 +119,36 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         legacyPromptShown = false
         window.title = "\(request.host):\(request.port) — RDP Mac"
 
-        let account = KeychainStore.account(host: request.host,
-                                            port: request.port,
-                                            domain: request.domain,
-                                            username: request.username)
-        if request.savePassword, !request.password.isEmpty {
-            if KeychainStore.save(password: request.password, account: account) {
-                LogStore.shared.append(L("Пароль сохранён в Keychain для %@:%@", String(describing: request.host), String(describing: request.port)),
-                                       level: 0)
-            } else {
-                LogStore.shared.append(L("Не удалось сохранить пароль в Keychain"), level: 1)
+        // A directory record owns the secret: saving writes to its shared item,
+        // and connecting never deletes it (other profiles may use it). Manual
+        // accounts keep the original host-keyed behaviour.
+        if let credentialID = request.credentialID,
+           let credential = CredentialStore.shared.credential(id: credentialID) {
+            if request.savePassword, !request.password.isEmpty {
+                if CredentialStore.shared.savePassword(request.password, for: credential) {
+                    LogStore.shared.append(L("Пароль сохранён в Keychain для учётной записи «%@»",
+                                             credential.displayName), level: 0)
+                } else {
+                    LogStore.shared.append(L("Не удалось сохранить пароль в Keychain"), level: 1)
+                }
             }
         } else {
-            // An empty password must not create an auto-connect entry, and
-            // clearing the checkbox removes any previously saved password.
-            KeychainStore.delete(account: account)
+            let account = KeychainStore.account(host: request.host,
+                                                port: request.port,
+                                                domain: request.domain,
+                                                username: request.username)
+            if request.savePassword, !request.password.isEmpty {
+                if KeychainStore.save(password: request.password, account: account) {
+                    LogStore.shared.append(L("Пароль сохранён в Keychain для %@:%@", String(describing: request.host), String(describing: request.port)),
+                                           level: 0)
+                } else {
+                    LogStore.shared.append(L("Не удалось сохранить пароль в Keychain"), level: 1)
+                }
+            } else {
+                // An empty password must not create an auto-connect entry, and
+                // clearing the checkbox removes any previously saved password.
+                KeychainStore.delete(account: account)
+            }
         }
 
         // The session view uses a 44 pt toolbar; match its desktop area exactly
@@ -262,15 +281,36 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     }
 
     private func profileSelected(_ id: UUID?) {
-        guard let id, let profile = profileStore.profiles.first(where: { $0.id == id }) else {
+        guard let id, var profile = profileStore.profile(id: id) else {
             formView.clearProfileSelection()
             formView.clearPassword()
             formView.showMessage(L("Новый профиль. Заполните параметры подключения."), isError: false)
             return
         }
-        let password = profileStore.password(for: profile)
+        // Lazy migration: the first time a profile with a legacy host-keyed
+        // password is opened, its record is created from the secret that was
+        // just read for the form. No extra Keychain prompt, nothing deleted.
+        if profile.credentialID == nil, profile.savePassword,
+           let legacySecret = profileStore.password(for: profile),
+           let credential = CredentialStore.shared.attachLegacyPassword(for: profile,
+                                                                        secret: legacySecret) {
+            profile.credentialID = credential.id
+            profileStore.upsert(profile)
+        }
+        let credential = CredentialStore.shared.credential(id: profile.credentialID)
+        let password = credential.map { CredentialStore.shared.password(for: $0) }
+            ?? profileStore.password(for: profile)
+        formView.setCredentials(CredentialStore.shared.credentials, selectedID: profile.credentialID)
         formView.applyProfile(profile, password: password)
-        if profile.savePassword && password == nil {
+        if let credential {
+            if password == nil {
+                formView.showMessage(L("Для учётной записи «%@» нет пароля в Keychain. Введите пароль.",
+                                       credential.displayName), isError: false)
+            } else {
+                formView.showMessage(L("Профиль: %@ · учётная запись «%@»",
+                                       profile.displayName, credential.displayName), isError: false)
+            }
+        } else if profile.savePassword && password == nil {
             formView.showMessage(L("В Keychain не найден пароль для этого профиля. Введите пароль."),
                                  isError: false)
         } else {
@@ -279,11 +319,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     }
 
     private func promptSaveProfile(_ profile: Profile) {
+        let draft = formView.isDraftProfile
         let alert = NSAlert()
-        alert.messageText = L("Сохранить профиль")
+        alert.messageText = draft ? L("Сохранить копию подключения") : L("Сохранить профиль")
         alert.informativeText = L("Пароль в JSON-профиль не записывается. Для пароля используйте ")
             + L("галочку «Сохранить пароль в Keychain».")
-        alert.addButton(withTitle: L("Сохранить"))
+        alert.addButton(withTitle: draft ? L("Сохранить копию") : L("Сохранить"))
         alert.addButton(withTitle: L("Отмена"))
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
         field.placeholderString = L("Имя профиля")
@@ -299,19 +340,53 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         if saved.name.isEmpty {
             saved.name = saved.displayName
         }
+
+        // A typed password goes into the selected account record. A profile (or
+        // a copy of one) that still keeps its secret under the legacy
+        // host-keyed item gets a new record, so the password survives an
+        // address change; nothing is ever written into the profile itself.
+        let typedPassword = formView.currentPassword
+        if saved.savePassword {
+            if let credentialID = saved.credentialID,
+               let credential = CredentialStore.shared.credential(id: credentialID) {
+                if !typedPassword.isEmpty,
+                   CredentialStore.shared.savePassword(typedPassword, for: credential) {
+                    LogStore.shared.append(L("Пароль сохранён в Keychain для учётной записи «%@»",
+                                             credential.displayName), level: 0)
+                }
+            } else if !saved.username.isEmpty {
+                let secret: String? = typedPassword.isEmpty ? nil : typedPassword
+                if let credential = CredentialStore.shared.attachLegacyPassword(for: saved,
+                                                                               secret: secret) {
+                    saved.credentialID = credential.id
+                    LogStore.shared.append(L("Создана учётная запись «%@» из профиля",
+                                             credential.displayName), level: 0)
+                }
+            }
+        }
+
         profileStore.upsert(saved)
         formView.setProfiles(profileStore.profiles, selectedID: saved.id)
-        formView.applyProfile(saved, password: formView.currentPassword)
-        formView.showMessage(L("Профиль сохранён: %@", String(describing: saved.name)), isError: false)
+        formView.setCredentials(CredentialStore.shared.credentials, selectedID: saved.credentialID)
+        let effectivePassword = saved.credentialID
+            .flatMap { CredentialStore.shared.credential(id: $0) }
+            .flatMap { CredentialStore.shared.password(for: $0) } ?? typedPassword
+        formView.applyProfile(saved, password: effectivePassword)
+        formView.showMessage(draft ? L("Копия сохранена: %@", String(describing: saved.name))
+                                   : L("Профиль сохранён: %@", String(describing: saved.name)),
+                             isError: false)
         LogStore.shared.append(L("Профиль сохранён: %@ (%@:%@)", String(describing: saved.name), String(describing: saved.host), String(describing: saved.port)),
                                level: 0)
     }
 
     private func deleteProfile(_ id: UUID) {
-        guard let profile = profileStore.profiles.first(where: { $0.id == id }) else { return }
+        guard let profile = profileStore.profile(id: id) else { return }
+        let shared = profile.credentialID != nil
         let alert = NSAlert()
         alert.messageText = L("Удалить профиль «%@»?", String(describing: profile.displayName))
-        alert.informativeText = L("Пароль этого профиля будет удалён из Keychain.")
+        alert.informativeText = shared
+            ? L("Учётная запись и её пароль останутся в справочнике и будут доступны другим подключениям.")
+            : L("Пароль этого профиля будет удалён из Keychain.")
         alert.addButton(withTitle: L("Удалить"))
         alert.addButton(withTitle: L("Отмена"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -325,10 +400,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     }
 
     private func forgetPassword() {
-        KeychainStore.delete(account: formView.currentAccount)
+        guard let credential = formView.selectedCredentialRecord else {
+            KeychainStore.delete(account: formView.currentAccount)
+            formView.clearPassword()
+            formView.showMessage(L("Пароль удалён из Keychain и из поля ввода."), isError: false)
+            LogStore.shared.append(L("Пароль удалён из Keychain для текущего сервера/пользователя"), level: 0)
+            return
+        }
+        let usage = CredentialStore.shared.profilesUsing(credential.id, in: profileStore).count
+        if usage > 1 {
+            let alert = NSAlert()
+            alert.messageText = L("Удалить общий пароль учётной записи «%@»?", credential.displayName)
+            alert.informativeText = L("Запись используется в %@ подключениях: пароль перестанет быть доступен всем им.",
+                                      String(describing: usage))
+            alert.addButton(withTitle: L("Удалить"))
+            alert.addButton(withTitle: L("Отмена"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        CredentialStore.shared.forgetPassword(for: credential)
         formView.clearPassword()
-        formView.showMessage(L("Пароль удалён из Keychain и из поля ввода."), isError: false)
-        LogStore.shared.append(L("Пароль удалён из Keychain для текущего сервера/пользователя"), level: 0)
+        formView.showMessage(L("Пароль учётной записи удалён из Keychain."), isError: false)
+        LogStore.shared.append(L("Пароль удалён из Keychain для учётной записи «%@»",
+                                 credential.displayName), level: 0)
     }
 
     // MARK: - RDPMacClientDelegate
@@ -575,6 +668,37 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         AppAbout.show()
     }
 
+    /// Opens the shared user directory. Editing it never touches a running
+    /// session: each session already received its own credentials.
+    @objc func showCredentials(_ sender: Any?) {
+        if credentialsController == nil {
+            let controller = CredentialsWindowController()
+            controller.onChange = { [weak self] in
+                guard let self else { return }
+                self.formView.setCredentials(CredentialStore.shared.credentials,
+                                             selectedID: self.formView.currentCredential)
+                self.formView.setProfiles(self.profileStore.profiles,
+                                          selectedID: self.formView.selectedProfile)
+                NotificationCenter.default.post(name: Self.sessionDidChange, object: self)
+            }
+            credentialsController = controller
+        }
+        credentialsController?.reload()
+        credentialsController?.showWindow(nil)
+        credentialsController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Opens the editor with an unsaved copy. Nothing is written until the user
+    /// saves it, so cancelling leaves no profile and no Keychain change.
+    func applyDraftProfile(_ profile: Profile, password: String?) {
+        didInitialProfileSelection = true
+        formView.setProfiles(profileStore.profiles, selectedID: profile.id)
+        formView.setCredentials(CredentialStore.shared.credentials, selectedID: profile.credentialID)
+        formView.applyDraft(profile, password: password)
+        formView.showMessage(L("Копия профиля «%@». Измените параметры и сохраните.",
+                               String(describing: profile.name)), isError: false)
+    }
+
     @objc func showHelp(_ sender: Any?) {
         let alert = NSAlert()
         alert.messageText = L("RDP Mac: что уже работает")
@@ -696,6 +820,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         client?.disconnect()
         diagnosticsController?.close()
         logController?.close()
+        credentialsController?.close()
         onClose?(self)
     }
 

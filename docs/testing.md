@@ -25,7 +25,11 @@ No RDP server is required. The suite builds the Objective-C bridge and runs:
   `FREERDP_ERROR_CONNECT_TRANSPORT_FAILED`.
 - `Tests/session_windows.swift` — independent windows, menu target switching,
   closing one window without losing another, shutdown completion, group/search
-  ordering, and decoding older profiles without a `group` key.
+  ordering, decoding older profiles without a `group` key, duplicating a profile
+  (new identity, original untouched, draft not persisted), the shared account
+  directory (copy, shared use, detach on delete, no password in JSON), lazy
+  migration of host-keyed passwords (idempotent, legacy items kept, equal logins
+  on different servers stay separate) and the duplicate-selection rules.
 - `--selftest` inside the app — embedded FreeRDP/OpenSSL load, the NTLM MD4 and
   RC4 implementations match their reference values, and the text codecs work
   without network access.
@@ -64,6 +68,22 @@ version and sanitized log; never include passwords or clipboard contents.
       screen; the log then shows “Ctrl+Alt+Delete sent: 8 keyboard events”.
       A “not sent” line means the session rejected the events, not that the
       remote policy blocked the screen.
+
+### Saved connections and accounts
+
+- [ ] Duplicate a saved profile, change only the address, save: the copy appears
+      in the manager and the original is unchanged.
+- [ ] Open the copy and connect without retyping the password (it comes from the
+      shared account record).
+- [ ] Cancel the duplicate editor: no new profile appears and the original still
+      connects.
+- [ ] Pick another account in the form: the password field is empty and the
+      previous user's password is not sent.
+- [ ] Edit a shared account used by two profiles: both show the new user name;
+      a warning names the number of affected connections.
+- [ ] Delete an account used by a profile: the profile stays, keeps its user name
+      and domain, and asks for a password.
+- [ ] A profile saved before this version still connects with its old password.
 
 ### Clipboard
 

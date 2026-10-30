@@ -99,8 +99,23 @@ scales it with preserved aspect ratio.
 ## Storage
 
 - Profiles: `~/Library/Application Support/RDPMac/profiles.json`, JSON without
-  passwords. Missing `group`/`legacyTLS` keys from older files decode to
-  defaults.
-- Passwords: Keychain, service = bundle identifier, account =
-  `host:port/domain\user`; only with explicit consent.
+  passwords. Missing `group`/`legacyTLS`/`credentialID` keys from older files
+  decode to defaults.
+- Account directory: `~/Library/Application Support/RDPMac/credentials.json`
+  (mode 0600), records of id/title/username/domain only — never a password.
+  A profile references a record through `credentialID`; several profiles may
+  share one record.
+- Passwords: Keychain, service = bundle identifier. Profiles created before the
+  directory existed still use `host:port/domain\user`; directory records use
+  `credential/<uuid>`, which does not depend on the server address, so changing
+  the address or duplicating a profile keeps the saved password.
+- Migration is lazy and idempotent: the first time a legacy profile with a saved
+  password is opened (or saved from a copy), the secret that was already read for
+  the form is copied into a new `credential/<uuid>` item, verified in memory, and
+  only then is the profile linked. Legacy Keychain items are never deleted, so a
+  downgrade keeps working, and an interrupted migration resumes without
+  duplicates (`legacyAccount` marker in `credentials.json`).
+- Duplicating a profile creates a new UUID and a temporary draft window; nothing
+  is written until the user saves it, so cancelling leaves no profile and no
+  Keychain change.
 - Log: `~/Library/Logs/RDPMac/rdp.log`, 2 MiB rotation, shared by all sessions.

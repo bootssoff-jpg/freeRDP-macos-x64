@@ -23,6 +23,21 @@ legacy security opens the section so those choices are visible. Editing from
 the manager never automatically starts a connection. Searching reveals matching
 profiles even when their group was collapsed.
 
+**Duplicate connection** (manager context menu, the “Дублировать” button, or
+`⌘⇧D` while the manager is frontmost) opens the editor with an unsaved copy: new
+identity, the same host/group/settings and the same account record. Changing the
+address keeps the saved password because the account record owns it. Nothing is
+written until “Save copy”, so cancelling creates no profile and no Keychain item.
+
+The **account directory** (“Справочник…” next to “Учётная запись”) stores title,
+user name and domain only; passwords stay in the Keychain under
+`credential/<uuid>`. One record can be used by several connections, so changing
+its password affects all of them (the editor says so). Deleting a record keeps
+its connections, which then keep only the user name and domain. Switching the
+account in the form always clears the password field, so a previous user's
+password is never reused. Directory edits never touch a running session: each
+session received its own copy of the credentials when it started.
+
 A clipboard response timeout offers explicit reconnection. The previous request
 is retained until its response arrives because CLIPRDR responses have no request
 ID. Do not clear it merely to make the UI appear recovered.

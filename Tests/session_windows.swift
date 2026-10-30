@@ -25,6 +25,13 @@ expect(findItem(emptyMenu, action: #selector(AppDelegate.showHelp(_:)))?.target 
 expect(findItem(emptyMenu, action: #selector(MainWindowController.disconnect(_:)))?.target == nil,
        "session commands have no target before a session exists")
 
+let duplicateItem = findItem(emptyMenu, action: #selector(AppDelegate.duplicateProfile(_:)))
+expect(duplicateItem != nil && duplicateItem?.keyEquivalent == "d" &&
+       duplicateItem?.keyEquivalentModifierMask == [.command, .shift],
+       "duplicate connection uses a free Cmd+Shift+D shortcut")
+expect(duplicateItem.map { launchDelegate.validateMenuItem($0) } == false,
+       "duplicate connection is disabled without a selected profile")
+
 let delegate = AppDelegate()
 let first = delegate.createSession(showWindow: false)
 let second = delegate.createSession(showWindow: false)
@@ -90,6 +97,141 @@ manager.profilesProvider = { [a,b,c] }
 manager.reload()
 expect(manager.rows.count == 5, "manager renders shared demo profiles without persistence")
 manager.window?.close()
+
+// MARK: - Duplicate profiles and the account directory
+
+let scratch = FileManager.default.temporaryDirectory
+    .appendingPathComponent("rdpmac-tests-\(UUID().uuidString)", isDirectory: true)
+try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+defer { try? FileManager.default.removeItem(at: scratch) }
+
+var original = Profile(); original.name = "Office"; original.host = "demo.invalid"
+original.username = "demo"; original.domain = "EXAMPLE"; original.group = "Work"
+let copy = original.duplicated()
+expect(copy.id != original.id, "duplicate gets a new identity")
+expect(copy.name != original.name && copy.name.hasPrefix("Office"),
+       "duplicate is named after the original with a copy suffix")
+expect(copy.host == original.host && copy.username == original.username &&
+       copy.domain == original.domain && copy.group == original.group,
+       "duplicate keeps every connection setting and the group")
+expect(original.host == "demo.invalid" && original.name == "Office",
+       "duplicating never modifies the original profile")
+
+let draftStore = ProfileStore(directory: scratch)
+draftStore.upsert(original)
+expect(draftStore.profiles.count == 1, "saved profile is persisted in the scratch store")
+expect(!draftStore.contains(id: copy.id), "an unsaved duplicate is not in the store")
+expect(draftStore.profile(id: original.id)?.host == "demo.invalid",
+       "the original profile stays unchanged after duplicating")
+
+let credential = Credential(title: "Demo account", username: "demo", domain: "EXAMPLE")
+let memorySecrets = MemorySecretStore()
+let directory = CredentialStore(directory: scratch, secrets: memorySecrets)
+directory.upsert(credential)
+expect(directory.password(for: credential) == nil, "a new account has no saved password")
+expect(directory.savePassword("s3cret-value", for: credential), "password can be stored for an account")
+expect(directory.hasPassword(credential), "stored password is reported as present")
+expect(directory.password(for: credential) == "s3cret-value", "stored password reads back in memory")
+
+let credentialCopy = directory.duplicate(credential)
+expect(credentialCopy.id != credential.id, "copied account gets a new identity")
+expect(directory.password(for: credentialCopy) == "s3cret-value",
+       "copied account receives its own copy of the secret")
+expect(CredentialStore.keychainAccount(for: credential.id) !=
+       CredentialStore.keychainAccount(for: credentialCopy.id),
+       "each account uses a distinct Keychain item")
+
+var sharedProfile = original
+sharedProfile.credentialID = credential.id
+sharedProfile.savePassword = true
+draftStore.upsert(sharedProfile)
+var secondProfile = original
+secondProfile.id = UUID()
+secondProfile.credentialID = credential.id
+draftStore.upsert(secondProfile)
+expect(directory.profilesUsing(credential.id, in: draftStore).count == 2,
+       "one account is shared by several profiles")
+draftStore.detachProfiles(credentialID: credential.id)
+expect(directory.profilesUsing(credential.id, in: draftStore).isEmpty,
+       "deleting an account detaches its profiles")
+expect(draftStore.profiles.count == 2 && draftStore.profiles.allSatisfy { $0.credentialID == nil },
+       "detached profiles are kept without a directory reference")
+
+let encodedCredentials = String(data: try JSONEncoder().encode([credential]),
+                                encoding: .utf8) ?? ""
+expect(!encodedCredentials.lowercased().contains("password"),
+       "credentials JSON contains no password field")
+expect(!encodedCredentials.contains("s3cret-value"), "credentials JSON never contains the secret")
+
+// MARK: - Migration of host-keyed Keychain entries
+
+let legacyDir = scratch.appendingPathComponent("migration", isDirectory: true)
+let legacyProfiles = ProfileStore(directory: legacyDir)
+let legacySecrets = MemorySecretStore()
+var legacyProfile = Profile(); legacyProfile.name = "Legacy"; legacyProfile.host = "legacy.invalid"
+legacyProfile.username = "alice"; legacyProfile.domain = "EXAMPLE"
+legacyProfile.savePassword = true
+legacyProfiles.upsert(legacyProfile)
+let legacyAccount = KeychainStore.account(host: legacyProfile.host, port: legacyProfile.port,
+                                          domain: legacyProfile.domain,
+                                          username: legacyProfile.username)
+legacySecrets.save(password: "legacy-secret", account: legacyAccount)
+let legacyDirectory = CredentialStore(directory: legacyDir, secrets: legacySecrets)
+
+expect(legacyDirectory.migrateLegacyPasswords(profiles: legacyProfiles) == 1,
+       "legacy password is migrated into the account directory")
+let migratedProfile = legacyProfiles.profile(id: legacyProfile.id)
+expect(migratedProfile?.credentialID != nil, "migrated profile references a directory record")
+if let migratedID = migratedProfile?.credentialID,
+   let migratedCredential = legacyDirectory.credential(id: migratedID) {
+    expect(legacyDirectory.password(for: migratedCredential) == "legacy-secret",
+           "migrated account holds the original secret")
+    expect(migratedCredential.legacyAccount == nil, "migration marker is cleared after linking")
+} else {
+    expect(false, "migrated account exists")
+}
+expect(legacySecrets.password(account: legacyAccount) == "legacy-secret",
+       "the legacy Keychain item is never deleted by migration")
+expect(legacyDirectory.migrateLegacyPasswords(profiles: legacyProfiles) == 0,
+       "running migration again changes nothing")
+expect(legacyDirectory.credentials.count == 1, "repeated migration creates no duplicates")
+
+let reloadedDirectory = CredentialStore(directory: legacyDir, secrets: legacySecrets)
+expect(reloadedDirectory.credentials.count == 1, "directory survives a restart without duplicates")
+let reloadedProfiles = ProfileStore(directory: legacyDir)
+expect(reloadedProfiles.profile(id: legacyProfile.id)?.credentialID == migratedProfile?.credentialID,
+       "profile keeps its directory reference after a restart")
+
+// A second profile with the same login must not be merged into one record.
+var sibling = legacyProfile
+sibling.id = UUID()
+sibling.host = "other.invalid"
+sibling.credentialID = nil
+legacyProfiles.upsert(sibling)
+let siblingAccount = KeychainStore.account(host: sibling.host, port: sibling.port,
+                                           domain: sibling.domain, username: sibling.username)
+legacySecrets.save(password: "other-secret", account: siblingAccount)
+_ = legacyDirectory.migrateLegacyPasswords(profiles: legacyProfiles)
+expect(legacyDirectory.credentials.count == 2, "equal logins on different servers stay separate records")
+
+// MARK: - Duplicate selection rules
+
+let duplicateRows = ConnectionsWindowController.groupedRows(profiles: [a, b], query: "")
+expect(ConnectionsWindowController.canDuplicate(rows: duplicateRows, selection: IndexSet(integer: 0)) == false,
+       "a group header cannot be duplicated")
+if let profileRow = duplicateRows.firstIndex(where: {
+    if case .profile = $0 { return true }
+    return false
+}) {
+    expect(ConnectionsWindowController.canDuplicate(rows: duplicateRows,
+                                                    selection: IndexSet(integer: profileRow)),
+           "a single selected profile can be duplicated")
+    expect(!ConnectionsWindowController.canDuplicate(rows: duplicateRows,
+                                                     selection: IndexSet([0, profileRow])),
+           "duplicate requires exactly one selected profile")
+} else {
+    expect(false, "profile row found for duplicate selection test")
+}
 let resourceRoot = Bundle.main.resourceURL!
 func stringsTable(_ language: String) throws -> [String: String] {
     let data = try Data(contentsOf: resourceRoot.appendingPathComponent("\(language).lproj/Localizable.strings"))

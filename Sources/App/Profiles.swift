@@ -80,6 +80,9 @@ struct Profile: Codable, Identifiable, Equatable {
     var port: Int = 3389
     var username: String = ""
     var domain: String = ""
+    /// Reference to the shared user directory. `nil` keeps the legacy behaviour
+    /// where the password (if any) is keyed by host/port/account.
+    var credentialID: UUID? = nil
     var security: ConnectionSecurity = .negotiate
     var savePassword: Bool = false
     var clipboardEnabled: Bool = true
@@ -102,7 +105,20 @@ struct Profile: Codable, Identifiable, Equatable {
     }
 
     var keychainAccount: String {
-        KeychainStore.account(host: host, port: port, domain: domain, username: username)
+        if let credentialID {
+            return CredentialStore.keychainAccount(for: credentialID)
+        }
+        return KeychainStore.account(host: host, port: port, domain: domain, username: username)
+    }
+
+    /// Copy for "Duplicate": new identity, same settings and directory record.
+    /// Nothing is persisted here and the original profile is not modified.
+    func duplicated() -> Profile {
+        var copy = self
+        copy.id = UUID()
+        let base = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.name = L("%@ — копия", base.isEmpty ? displayName : base)
+        return copy
     }
 }
 
@@ -110,15 +126,17 @@ final class ProfileStore {
     static let shared = ProfileStore()
     static let didChange = Notification.Name("RDPMacProfilesDidChange")
     private(set) var profiles: [Profile] = []
+    let directory: URL
     private let fileURL: URL
 
-    init() {
+    init(directory: URL? = nil) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory,
                                               in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        let directory = support.appendingPathComponent("RDPMac", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        fileURL = directory.appendingPathComponent("profiles.json")
+        let target = directory ?? support.appendingPathComponent("RDPMac", isDirectory: true)
+        try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        self.directory = target
+        fileURL = target.appendingPathComponent("profiles.json")
         load()
     }
 
@@ -148,6 +166,33 @@ final class ProfileStore {
         NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
+    func profile(id: UUID) -> Profile? {
+        profiles.first { $0.id == id }
+    }
+
+    func contains(id: UUID) -> Bool {
+        profiles.contains { $0.id == id }
+    }
+
+    func profilesUsing(credentialID: UUID) -> [Profile] {
+        profiles.filter { $0.credentialID == credentialID }
+    }
+
+    /// Detaches every profile that references a removed directory record. The
+    /// profiles keep their username/domain and keep working without a saved
+    /// password; nothing is deleted.
+    func detachProfiles(credentialID: UUID) {
+        var changed = false
+        for index in profiles.indices where profiles[index].credentialID == credentialID {
+            profiles[index].credentialID = nil
+            profiles[index].savePassword = false
+            changed = true
+        }
+        guard changed else { return }
+        persist()
+        NotificationCenter.default.post(name: Self.didChange, object: self)
+    }
+
     private func persist() {
         do {
             let data = try JSONEncoder.pretty.encode(profiles)
@@ -161,7 +206,10 @@ final class ProfileStore {
         KeychainStore.password(account: profile.keychainAccount)
     }
 
+    /// Deletes a profile's saved password only when it belongs to that profile
+    /// alone. Passwords kept in the shared user directory are managed there.
     func forgetPassword(for profile: Profile) {
+        guard profile.credentialID == nil else { return }
         KeychainStore.delete(account: profile.keychainAccount)
     }
 }
@@ -179,6 +227,18 @@ enum KeychainStore {
 
     static func account(host: String, port: Int, domain: String, username: String) -> String {
         "\(host.lowercased()):\(port)/\(domain)\\\(username)"
+    }
+
+    /// Metadata-only check: does a password exist for this account? No secret
+    /// is read, so this is safe for UI state and tests.
+    static func hasPassword(account: String) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
     }
 
     static func password(account: String) -> String? {

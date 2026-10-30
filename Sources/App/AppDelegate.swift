@@ -1,7 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private(set) var sessionControllers: [MainWindowController] = []
     private var connectionsController: ConnectionsWindowController?
     private var globalLogController: LogWindowController?
@@ -52,6 +52,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func newSession(_ sender: Any?) { createSession() }
 
+    /// Opens a new editor window with an unsaved copy of `profile`. The copy
+    /// keeps the directory record (and therefore the saved password) but gets a
+    /// new identity, so the original profile is never modified.
+    func duplicateProfileInNewWindow(_ profile: Profile) {
+        let copy = profile.duplicated()
+        let credential = CredentialStore.shared.credential(id: profile.credentialID)
+        let password = credential.map { CredentialStore.shared.password(for: $0) }
+            ?? (profile.savePassword ? KeychainStore.password(account: profile.keychainAccount) : nil)
+        let controller = createSession(showWindow: true, connectAutomatically: false)
+        controller.applyDraftProfile(copy, password: password)
+        LogStore.shared.append(L("Дублирование профиля: %@", String(describing: profile.displayName)),
+                               level: 0)
+    }
+
+    @objc func duplicateProfile(_ sender: Any?) {
+        connectionsController?.duplicateSelected(sender)
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(duplicateProfile(_:)) {
+            guard let manager = connectionsController, manager.window?.isVisible == true else {
+                return false
+            }
+            return manager.canDuplicateSelection
+        }
+        return true
+    }
+
     @objc func showConnections(_ sender: Any?) {
         if connectionsController == nil {
             let controller = ConnectionsWindowController()
@@ -59,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.createSession(profile: profile, connectAutomatically: false)
             }
             controller.onOpen = { [weak self] profile in self?.createSession(profile: profile) }
+            controller.onDuplicate = { [weak self] profile in self?.duplicateProfileInNewWindow(profile) }
             controller.sessionStatus = { [weak self] id in
                 let sessions = self?.sessionControllers.filter { $0.runningProfileID == id } ?? []
                 let connected = sessions.filter { $0.isConnected }.count
@@ -235,6 +264,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   key: "n", target: self))
         fileMenu.addItem(menuItem(L("Подключения…"), action: #selector(showConnections(_:)),
                                   key: "0", target: self))
+        fileMenu.addItem(menuItem(L("Дублировать подключение"),
+                                  action: #selector(duplicateProfile(_:)),
+                                  key: "d",
+                                  modifiers: [.command, .shift],
+                                  target: self))
         fileMenu.addItem(.separator())
         fileMenu.addItem(menuItem(L("Параметры подключения"),
                                   action: #selector(MainWindowController.showSettings(_:)),

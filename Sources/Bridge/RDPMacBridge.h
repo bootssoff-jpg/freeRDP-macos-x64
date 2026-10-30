@@ -92,6 +92,30 @@ typedef NS_ENUM(NSInteger, RDPMacCertificateDecision) {
 - (void)rdpClient:(RDPMacClient *)client didDisconnectWithError:(nullable NSString *)error;
 @end
 
+/// Connection-time options that are not a single profile field: remote size,
+/// Windows DPI scaling and the client-side performance preferences that are
+/// sent once in the Client Info PDU.
+@interface RDPMacSessionOptions : NSObject
+@property (nonatomic, assign) NSUInteger desktopWidth;
+@property (nonatomic, assign) NSUInteger desktopHeight;
+/// 100 or 200 percent. Sent as DesktopScaleFactor/DeviceScaleFactor; servers
+/// may ignore it.
+@property (nonatomic, assign) NSUInteger desktopScaleFactor;
+@property (nonatomic, assign) BOOL disableWallpaper;
+@property (nonatomic, assign) BOOL disableThemes;
+@property (nonatomic, assign) BOOL disableAnimations;
+@property (nonatomic, assign) BOOL disableFullWindowDrag;
+@property (nonatomic, assign) BOOL allowDesktopComposition;
+@property (nonatomic, assign) BOOL allowFontSmoothing;
+/// 16 or 32 bits per pixel.
+@property (nonatomic, assign) NSUInteger colorDepth;
+/// FreeRDP bulk compression type: 1 = 64K, 2 = RDP6, 3 = RDP6.1.
+@property (nonatomic, assign) NSUInteger compressionLevel;
+/// Current behaviour: 32 bpp, Retina-friendly defaults, everything enabled.
++ (instancetype)defaultOptionsWithWidth:(NSUInteger)width height:(NSUInteger)height;
+@end
+
+
 @interface RDPMacClient : NSObject
 
 @property (nonatomic, weak, nullable) id<RDPMacClientDelegate> delegate;
@@ -109,6 +133,25 @@ typedef NS_ENUM(NSInteger, RDPMacCertificateDecision) {
 
 /// Library-level smoke test used by `--selftest` (no server required).
 + (NSString *)selfTestReport;
+
+/// Starts a background connection thread with explicit session options.
+/// Returns NO only for invalid input.
+- (BOOL)startWithHost:(NSString *)host
+                  port:(NSInteger)port
+              username:(NSString *)username
+                domain:(NSString *)domain
+              password:(NSString *)password
+               options:(RDPMacSessionOptions *)options
+          securityMode:(RDPMacSecurityMode)securityMode
+     clipboardEnabled:(BOOL)clipboardEnabled
+     commandAsControl:(BOOL)commandAsControl
+       allowLegacyTLS:(BOOL)allowLegacyTLS
+ certificatePromptTimeout:(NSTimeInterval)timeout
+                 error:(NSError *_Nullable *_Nullable)error;
+
+/// Applies `options` to a fresh FreeRDP context and reports the resulting
+/// settings. No credentials are involved; used by tests and `--selftest`.
++ (NSDictionary<NSString *, id> *)optionsReport:(RDPMacSessionOptions *)options;
 
 /// Starts a background connection thread. Returns NO only for invalid input.
 - (BOOL)startWithHost:(NSString *)host

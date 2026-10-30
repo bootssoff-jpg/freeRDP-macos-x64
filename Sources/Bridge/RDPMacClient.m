@@ -834,6 +834,59 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
     return (DWORD)decision;
 }
 
+@implementation RDPMacSessionOptions
++ (instancetype)defaultOptionsWithWidth:(NSUInteger)width height:(NSUInteger)height
+{
+    RDPMacSessionOptions *options = [[RDPMacSessionOptions alloc] init];
+    options.desktopWidth = width;
+    options.desktopHeight = height;
+    options.desktopScaleFactor = 100;
+    options.disableWallpaper = NO;
+    options.disableThemes = NO;
+    // FreeRDP already defaults to disabling window drag and menu animations.
+    options.disableAnimations = YES;
+    options.disableFullWindowDrag = YES;
+    options.allowDesktopComposition = NO;
+    options.allowFontSmoothing = YES;
+    options.colorDepth = 32;
+    options.compressionLevel = 3;
+    return options;
+}
+@end
+
+/// Applies the session options to FreeRDP settings. Returns NO when any value
+/// is rejected. Kept as a free function so both the live session and the
+/// test/`--selftest` report use exactly the same mapping.
+static BOOL RDPMacApplySessionOptions(rdpSettings *settings, RDPMacSessionOptions *options)
+{
+    if (!settings || !options)
+        return NO;
+    const UINT32 depth = (options.colorDepth == 16) ? 16 : 32;
+    const UINT32 compression = (options.compressionLevel >= 1 && options.compressionLevel <= 3)
+        ? (UINT32)options.compressionLevel : 3;
+    const UINT32 scale = (options.desktopScaleFactor == 200) ? 200 : 100;
+
+    BOOL ok = YES;
+    ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, depth);
+    ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_CompressionLevel, compression);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_CompressionEnabled, TRUE);
+    ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_DesktopScaleFactor, scale);
+    ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_DeviceScaleFactor, scale);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_DisableWallpaper,
+                                        options.disableWallpaper);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_DisableThemes,
+                                        options.disableThemes);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_DisableMenuAnims,
+                                        options.disableAnimations);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_DisableFullWindowDrag,
+                                        options.disableFullWindowDrag);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_AllowDesktopComposition,
+                                        options.allowDesktopComposition);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_AllowFontSmoothing,
+                                        options.allowFontSmoothing);
+    return ok;
+}
+
 @implementation RDPMacClient
 {
     RDPMacContext *_context;
@@ -870,6 +923,7 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
     BOOL _certificatePromptActive;
     BOOL _certificateRejected;
     BOOL _lastErrorWasTLS;
+    NSUInteger _desktopScaleFactor;
 }
 
 + (void)initialize
@@ -960,6 +1014,7 @@ static DWORD rdp_verify_changed_certificate_ex(freerdp *instance, const char *ho
         _clipboardSynchronizationActive = NO;
         [_clipboard setSynchronizationActive:NO];
         _state = RDPMacConnectionStateIdle;
+        _desktopScaleFactor = 100;
     }
     return self;
 }
@@ -1020,6 +1075,51 @@ static NSError *RDPMacClientError(NSString *message)
                            userInfo:@{NSLocalizedDescriptionKey : message}];
 }
 
+
+/// Features that implicitly require the rdpdr channel (not built in this
+/// client) plus certificate handling must be identical for live sessions and
+/// the diagnostic report, so both call this one function.
+static BOOL RDPMacApplyMinimalClientSettings(rdpSettings *settings)
+{
+    BOOL ok = YES;
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_NetworkAutoDetect, FALSE);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_SupportHeartbeatPdu, FALSE);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_SupportMultitransport, FALSE);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_AutoAcceptCertificate, FALSE);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_AutoDenyCertificate, FALSE);
+    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, FALSE);
+    return ok;
+}
+
++ (NSDictionary<NSString *, id> *)optionsReport:(RDPMacSessionOptions *)options
+{
+    RDP_CLIENT_ENTRY_POINTS entryPoints = {0};
+    if (RDPMacClientEntry(&entryPoints) != 0)
+        return @{@"error" : @"entry points"};
+    rdpContext *context = freerdp_client_context_new(&entryPoints);
+    if (!context)
+        return @{@"error" : @"context"};
+    rdpSettings *settings = context->settings;
+    const BOOL applied = RDPMacApplySessionOptions(settings, options) &&
+                         RDPMacApplyMinimalClientSettings(settings);
+    // The flags are rebuilt from these booleans when the Client Info PDU is
+    // sent, so report the source of truth plus the computed value.
+    freerdp_performance_flags_make(settings);
+    NSDictionary *report = @{
+        @"applied" : @(applied),
+        @"colorDepth" : @(freerdp_settings_get_uint32(settings, FreeRDP_ColorDepth)),
+        @"compressionLevel" : @(freerdp_settings_get_uint32(settings, FreeRDP_CompressionLevel)),
+        @"desktopScaleFactor" : @(freerdp_settings_get_uint32(settings, FreeRDP_DesktopScaleFactor)),
+        @"deviceScaleFactor" : @(freerdp_settings_get_uint32(settings, FreeRDP_DeviceScaleFactor)),
+        @"performanceFlags" : @(freerdp_settings_get_uint32(settings, FreeRDP_PerformanceFlags)),
+        @"networkAutoDetect" : @(freerdp_settings_get_bool(settings, FreeRDP_NetworkAutoDetect)),
+        @"autoAcceptCertificate" : @(freerdp_settings_get_bool(settings, FreeRDP_AutoAcceptCertificate)),
+    };
+    freerdp_client_context_free(context);
+    return report;
+}
+
+/// Compatibility entry point: the same defaults as 1.0.x.
 - (BOOL)startWithHost:(NSString *)host
                   port:(NSInteger)port
               username:(NSString *)username
@@ -1034,6 +1134,40 @@ static NSError *RDPMacClientError(NSString *message)
  certificatePromptTimeout:(NSTimeInterval)timeout
                  error:(NSError **)error
 {
+    RDPMacSessionOptions *options = [RDPMacSessionOptions defaultOptionsWithWidth:width
+                                                                          height:height];
+    return [self startWithHost:host
+                          port:port
+                      username:username
+                        domain:domain
+                      password:password
+                       options:options
+                  securityMode:securityMode
+             clipboardEnabled:clipboardEnabled
+             commandAsControl:commandAsControl
+               allowLegacyTLS:allowLegacyTLS
+       certificatePromptTimeout:timeout
+                         error:error];
+}
+
+- (BOOL)startWithHost:(NSString *)host
+                  port:(NSInteger)port
+              username:(NSString *)username
+                domain:(NSString *)domain
+              password:(NSString *)password
+               options:(RDPMacSessionOptions *)options
+          securityMode:(RDPMacSecurityMode)securityMode
+     clipboardEnabled:(BOOL)clipboardEnabled
+     commandAsControl:(BOOL)commandAsControl
+       allowLegacyTLS:(BOOL)allowLegacyTLS
+ certificatePromptTimeout:(NSTimeInterval)timeout
+                 error:(NSError **)error
+{
+    if (!options) {
+        if (error)
+            *error = RDPMacClientError(RDPMacLocalizedString(@"Внутренняя ошибка: параметры сеанса не заданы."));
+        return NO;
+    }
     NSString *trimmedHost = [host stringByTrimmingCharactersInSet:
                                       [NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (trimmedHost.length == 0) {
@@ -1057,10 +1191,11 @@ static NSError *RDPMacClientError(NSString *message)
         return NO;
     }
 
-    NSUInteger safeWidth = MAX((NSUInteger)640, MIN(width, RDPMacMaxFrameDimension));
-    NSUInteger safeHeight = MAX((NSUInteger)480, MIN(height, RDPMacMaxFrameDimension));
+    NSUInteger safeWidth = MAX((NSUInteger)640, MIN(options.desktopWidth, RDPMacMaxFrameDimension));
+    NSUInteger safeHeight = MAX((NSUInteger)480, MIN(options.desktopHeight, RDPMacMaxFrameDimension));
     safeWidth &= ~(NSUInteger)1;
     safeHeight &= ~(NSUInteger)1;
+    _desktopScaleFactor = (options.desktopScaleFactor == 200) ? 200 : 100;
 
     _stopRequested = NO;
     _certificateRejected = NO;
@@ -1116,7 +1251,6 @@ static NSError *RDPMacClientError(NSString *message)
     ok = ok && freerdp_settings_set_string(settings, FreeRDP_Password, password.UTF8String ?: "");
     ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, (UINT32)safeWidth);
     ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, (UINT32)safeHeight);
-    ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32);
     ok = ok && freerdp_settings_set_bool(settings, FreeRDP_UseCommonStdioCallbacks, FALSE);
     ok = ok && freerdp_settings_set_bool(settings, FreeRDP_AuthenticationOnly, FALSE);
     ok = ok && freerdp_settings_set_bool(settings, FreeRDP_AutoAcceptCertificate, FALSE);
@@ -1149,9 +1283,10 @@ static NSError *RDPMacClientError(NSString *message)
     ok = ok && freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, FALSE);
     // These RDP8 features implicitly require the rdpdr channel, which is not
     // built in this minimal client. Disable them explicitly.
-    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_NetworkAutoDetect, FALSE);
-    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_SupportHeartbeatPdu, FALSE);
-    ok = ok && freerdp_settings_set_bool(settings, FreeRDP_SupportMultitransport, FALSE);
+    ok = ok && RDPMacApplyMinimalClientSettings(settings);
+    // Colour depth, compression, DPI scaling and the performance preferences
+    // come from the profile's quality/resolution settings.
+    ok = ok && RDPMacApplySessionOptions(settings, options);
     ok = ok && freerdp_settings_set_bool(settings, FreeRDP_NegotiateSecurityLayer, TRUE);
 
     if (allowLegacyTLS) {
@@ -1938,8 +2073,8 @@ static int RDPMacClampCoordinate(int value, size_t limit)
     layout.PhysicalWidth = (UINT32)safeWidth;
     layout.PhysicalHeight = (UINT32)safeHeight;
     layout.Orientation = 0;
-    layout.DesktopScaleFactor = 100;
-    layout.DeviceScaleFactor = 100;
+    layout.DesktopScaleFactor = (UINT32)_desktopScaleFactor;
+    layout.DeviceScaleFactor = (UINT32)_desktopScaleFactor;
 
     const UINT rc = _context->disp->SendMonitorLayout(_context->disp, 1, &layout);
     pthread_mutex_unlock(&_apiLock);

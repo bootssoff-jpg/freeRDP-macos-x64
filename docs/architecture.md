@@ -82,9 +82,38 @@ rejected rather than overrunning the buffer. Remote coordinates are converted
 from AppKit's bottom-left origin; mouse, wheel, keyboard and modifier events
 use the FreeRDP input API.
 
-DisplayControl resize requests are coalesced by a 0.45 s timer. If the server
-does not support DisplayControl, the original remote size remains and the view
-scales it with preserved aspect ratio.
+DisplayControl resize requests are coalesced by a timer (0.45 s by default,
+longer for the slow-network quality preset). If the server does not support
+DisplayControl, the original remote size remains and the view scales it with
+preserved aspect ratio.
+
+`ResolutionPolicy` (`Sources/App/ResolutionSettings.swift`) decides the remote
+size: window presets apply the display's backing scale and clamp to
+800×600 … 4096×2560, fixed presets are exact, custom sizes clamp to
+640×480 … 4096×2560, and every value is rounded down to an even number. Legacy
+profiles stored a plain integer, which `ResolutionPolicy.init(from:)` still
+accepts (0 window, 1 1280×720, 2 1920×1080, 3 2560×1440, all non-Retina).
+
+`RDPMacSessionOptions` carries the parts of a session that are neither
+credentials nor a single profile field: desktop size, DesktopScaleFactor /
+DeviceScaleFactor (100 or 200), the Client Info performance booleans, colour
+depth and the bulk-compression level. `RDPMacApplySessionOptions` maps them onto
+`rdpSettings`; the same function feeds `+optionsReport:`, which the tests use to
+read back the resulting settings without a server. The bridge keeps the scale
+factor for later DisplayControl layouts, always pins
+`AutoAcceptCertificate = FALSE` and keeps `NetworkAutoDetect`,
+`SupportHeartbeatPdu` and `SupportMultitransport` off (rdpdr is not built).
+
+`QualityPolicy` (`Sources/App/QualitySettings.swift`) resolves presets to those
+booleans so a saved profile stores the user's choice, not a frozen copy of the
+flags. Window-drag contents, animations, font smoothing and composition are
+client-side preferences that Windows may ignore; the UI says so instead of
+claiming a measured speed-up.
+
+The session toolbar is a `SessionView` row with a switchable height constraint.
+Hiding it releases the full 44 pt, so `RDPView` grows and, for window presets,
+`MainWindowController` sends the new size through DisplayControl. Full screen
+forces the toolbar hidden without forgetting the user preference.
 
 ## Certificates and TLS
 

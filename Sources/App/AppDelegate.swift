@@ -330,6 +330,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                                      sessionScoped: true))
         sessionItem.submenu = sessionMenu
 
+        let viewItem = NSMenuItem()
+        main.addItem(viewItem)
+        let viewMenu = NSMenu(title: L("Вид"))
+        viewMenu.addItem(menuItem(L("Показывать панель сеанса"),
+                                  action: #selector(MainWindowController.toggleSessionToolbar(_:)),
+                                  key: "t",
+                                  modifiers: [.command, .shift],
+                                  target: controller,
+                                  sessionScoped: true))
+        viewItem.submenu = viewMenu
+
         let clipboardItem = NSMenuItem()
         main.addItem(clipboardItem)
         let clipboardMenu = NSMenu(title: L("Буфер обмена"))

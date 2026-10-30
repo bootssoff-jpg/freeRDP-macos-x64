@@ -214,6 +214,140 @@ legacySecrets.save(password: "other-secret", account: siblingAccount)
 _ = legacyDirectory.migrateLegacyPasswords(profiles: legacyProfiles)
 expect(legacyDirectory.credentials.count == 2, "equal logins on different servers stay separate records")
 
+// MARK: - Resolution presets
+
+let legacyFixed = try JSONDecoder().decode(ResolutionPolicy.self, from: Data("2".utf8))
+expect(legacyFixed.preset == .r1920x1080 && !legacyFixed.retina,
+       "legacy resolution 2 maps to 1920 × 1080 without Retina")
+let legacyWindow = try JSONDecoder().decode(ResolutionPolicy.self, from: Data("0".utf8))
+expect(legacyWindow.preset == .window, "legacy resolution 0 keeps following the window")
+let legacyProfileJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(a)) as! [String: Any]
+var upgradedLegacyJSON = legacyProfileJSON
+upgradedLegacyJSON["resolution"] = 3
+let upgradedLegacy = try JSONDecoder().decode(Profile.self,
+    from: JSONSerialization.data(withJSONObject: upgradedLegacyJSON))
+expect(upgradedLegacy.resolution.preset == .r2560x1440 && !upgradedLegacy.resolution.retina,
+       "a 1.0.x profile keeps its fixed size after upgrade")
+let customResolution = ResolutionPolicy(preset: .custom, customWidth: 1440, customHeight: 900,
+                                        retina: false)
+let restoredResolution = try JSONDecoder().decode(ResolutionPolicy.self,
+                                                  from: JSONEncoder().encode(customResolution))
+expect(restoredResolution == customResolution, "custom resolution survives a JSON round trip")
+let fullHDResolution = ResolutionPolicy(preset: .r1920x1080, retina: true)
+expect(fullHDResolution.size(forWindow: NSSize(width: 4000, height: 3000), backingScale: 2)
+        == (1920, 1080),
+       "a fixed preset ignores window size and backing scale")
+expect(fullHDResolution.allowsAutoResize == false && fullHDResolution.desktopScaleFactor == 200,
+       "Retina on a fixed preset only requests Windows 200 % scaling")
+let windowResolution = ResolutionPolicy(preset: .window, retina: true)
+let clampedWindow = windowResolution.size(forWindow: NSSize(width: 5000, height: 4000),
+                                          backingScale: 2)
+expect(clampedWindow == (4096, 2560), "window mode clamps to the 4096 × 2560 memory limit")
+expect(clampedWindow.width % 2 == 0 && clampedWindow.height % 2 == 0,
+       "window mode sends even dimensions")
+expect(ResolutionPolicy(preset: .window, retina: false)
+        .size(forWindow: NSSize(width: 1280, height: 800), backingScale: 2) == (1280, 800),
+       "Retina off uses logical points")
+expect(ResolutionPolicy(preset: .window, retina: true)
+        .size(forWindow: NSSize(width: 1280, height: 800), backingScale: 2) == (2560, 1600),
+       "Retina on doubles the remote size on a 2× display")
+let oddCustom = ResolutionPolicy(preset: .custom, customWidth: 1441, customHeight: 901)
+expect(oddCustom.size(forWindow: .zero, backingScale: 1) == (1440, 900),
+       "odd custom sizes are rounded down to even values")
+expect(oddCustom.customSizeWarning == nil, "an in-range custom size has no warning")
+let bigCustom = ResolutionPolicy(preset: .custom, customWidth: 5000, customHeight: 3000)
+expect(bigCustom.size(forWindow: .zero, backingScale: 1) == (4096, 2560),
+       "oversized custom sizes are clamped")
+expect(bigCustom.customSizeWarning != nil, "oversized custom sizes are reported to the user")
+let smallCustom = ResolutionPolicy(preset: .custom, customWidth: 320, customHeight: 200)
+expect(smallCustom.customSizeWarning != nil, "undersized custom sizes are reported")
+expect(ResolutionPolicy(preset: .custom, customWidth: 640, customHeight: 480).customSizeWarning == nil,
+       "the minimum custom size is accepted")
+
+// MARK: - Quality policy
+
+let normalQuality = QualityPolicy()
+var normalOptions = RDPMacSessionOptions.defaultOptions(withWidth: 1920, height: 1080)
+normalQuality.apply(to: normalOptions)
+expect(normalOptions.colorDepth == 32 && normalOptions.compressionLevel == 3
+        && !normalOptions.disableWallpaper && !normalOptions.disableThemes,
+       "normal quality keeps wallpaper, themes and 32-bit colour")
+var slowQuality = QualityPolicy()
+slowQuality.preset = .slow
+var slowOptions = RDPMacSessionOptions.defaultOptions(withWidth: 1280, height: 720)
+slowOptions.desktopScaleFactor = 200
+slowQuality.apply(to: slowOptions)
+expect(slowOptions.disableWallpaper && slowOptions.disableThemes
+        && !slowOptions.allowFontSmoothing && !slowOptions.allowDesktopComposition,
+       "slow preset disables wallpaper, themes, font smoothing and composition")
+expect(slowOptions.desktopScaleFactor == 200 && slowOptions.colorDepth == 32,
+       "the slow preset does not silently change resolution or colour depth")
+expect(slowQuality.effectiveResizeThrottle > normalQuality.effectiveResizeThrottle,
+       "slow preset sends fewer DisplayControl resizes")
+expect(QualityPolicy.slowStartResolution.preset == .r1280x720
+        && !QualityPolicy.slowStartResolution.retina,
+       "slow preset starts from 1280 × 720 without Retina")
+var customQuality = QualityPolicy()
+customQuality.preset = .custom
+customQuality.colorDepth = 16
+customQuality.compressionLevel = 1
+customQuality.disableWallpaper = true
+var customOptions = RDPMacSessionOptions.defaultOptions(withWidth: 800, height: 600)
+customQuality.apply(to: customOptions)
+expect(customOptions.colorDepth == 16 && customOptions.compressionLevel == 1
+        && customOptions.disableWallpaper,
+       "custom quality maps 16-bit colour, 64K compression and wallpaper")
+var noQualityJSON = legacyProfileJSON
+noQualityJSON.removeValue(forKey: "quality")
+let oldQualityProfile = try JSONDecoder().decode(Profile.self,
+    from: JSONSerialization.data(withJSONObject: noQualityJSON))
+expect(oldQualityProfile.quality.preset == .normal, "profiles without a quality key default to normal")
+let slowReport = RDPMacClient.optionsReport(slowOptions)
+expect((slowReport["colorDepth"] as? NSNumber)?.uintValue == 32,
+       "options report exposes the requested colour depth")
+expect((slowReport["compressionLevel"] as? NSNumber)?.uintValue == 3,
+       "options report exposes the compression level")
+expect((slowReport["desktopScaleFactor"] as? NSNumber)?.uintValue == 200
+        && (slowReport["deviceScaleFactor"] as? NSNumber)?.uintValue == 200,
+       "options report sends the DPI scale factors")
+expect((slowReport["performanceFlags"] as? NSNumber)?.uint32Value ?? 0 != 0,
+       "slow preset produces non-zero Client Info performance flags")
+expect((slowReport["autoAcceptCertificate"] as? NSNumber)?.boolValue == false,
+       "session options never accept certificates automatically")
+expect((slowReport["networkAutoDetect"] as? NSNumber)?.boolValue == false,
+       "options report keeps NetworkAutoDetect disabled")
+
+// MARK: - Session toolbar
+
+let toolbarView = SessionView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+expect(toolbarView.isToolbarVisible
+        && toolbarView.desktopAreaHeight == SessionView.toolbarHeightValue,
+       "the session toolbar is visible by default")
+toolbarView.setToolbarVisible(false)
+expect(!toolbarView.isToolbarVisible && toolbarView.desktopAreaHeight == 0,
+       "hiding the toolbar releases the whole 44 pt row")
+toolbarView.setFullScreen(true)
+toolbarView.setToolbarVisible(true)
+expect(!toolbarView.isToolbarVisible, "full screen hides the toolbar even when it is enabled")
+toolbarView.setFullScreen(false)
+expect(toolbarView.isToolbarVisible, "leaving full screen restores the enabled toolbar")
+UserDefaults.standard.removeObject(forKey: MainWindowController.toolbarPreferenceKey)
+let toolbarSession = delegate.createSession(showWindow: false)
+toolbarSession.toggleSessionToolbar(nil)
+expect(UserDefaults.standard.object(forKey: MainWindowController.toolbarPreferenceKey) as? Bool
+        == false, "hiding the toolbar is remembered for new windows")
+toolbarSession.toggleSessionToolbar(nil)
+expect(UserDefaults.standard.object(forKey: MainWindowController.toolbarPreferenceKey) as? Bool
+        == true, "showing the toolbar is remembered too")
+let toolbarItem = findItem(menu, action: #selector(MainWindowController.toggleSessionToolbar(_:)))
+expect(toolbarItem?.keyEquivalent == "t"
+        && toolbarItem?.keyEquivalentModifierMask == [.command, .shift],
+       "show/hide session toolbar uses Cmd+Shift+T")
+_ = toolbarSession.validateMenuItem(toolbarItem!)
+expect(toolbarItem?.state == .on, "the menu check mark follows the current toolbar state")
+UserDefaults.standard.removeObject(forKey: MainWindowController.toolbarPreferenceKey)
+toolbarSession.window?.close()
+
 // MARK: - Duplicate selection rules
 
 let duplicateRows = ConnectionsWindowController.groupedRows(profiles: [a, b], query: "")

@@ -29,7 +29,12 @@ No RDP server is required. The suite builds the Objective-C bridge and runs:
   (new identity, original untouched, draft not persisted), the shared account
   directory (copy, shared use, detach on delete, no password in JSON), lazy
   migration of host-keyed passwords (idempotent, legacy items kept, equal logins
-  on different servers stay separate) and the duplicate-selection rules.
+  on different servers stay separate), the duplicate-selection rules,
+  resolution presets (legacy Int migration, window/Retina sizes, custom clamps
+  and warnings), quality presets mapped onto `RDPMacSessionOptions` and read back
+  through `+optionsReport:` (colour depth, compression, DPI scale, Client Info
+  performance flags, `AutoAcceptCertificate` and `NetworkAutoDetect` off), and
+  toolbar visibility including the full-screen and preference rules.
 - `--selftest` inside the app — embedded FreeRDP/OpenSSL load, the NTLM MD4 and
   RC4 implementations match their reference values, and the text codecs work
   without network access.
@@ -61,6 +66,21 @@ version and sanitized log; never include passwords or clipboard contents.
 - [ ] Window resize changes the remote resolution when DisplayControl is
       available; otherwise the frame is scaled with preserved aspect ratio.
 - [ ] Fullscreen enter/exit works; the session toolbar returns.
+- [ ] Each resolution preset connects: window, 1024×768, 1280×720, 1600×900,
+      1920×1080, 2560×1440 and a custom size (e.g. 1440×900). The Windows display
+      settings show the requested resolution.
+- [ ] A custom size below 640×480 or above 4096×2560 is refused with an
+      explanation and no connection starts; 641×481 connects as 640×480.
+- [ ] Retina off in window mode doubles nothing on a 2× display; Retina on sends
+      a desktop twice the window's points (check the Windows resolution).
+- [ ] A fixed preset does not change the remote resolution when the window is
+      resized; the image scales with preserved aspect ratio.
+- [ ] View → “Show session toolbar” (⌘⇧T) hides and restores the toolbar; in
+      window mode the remote desktop grows to fill the window. The menu check
+      mark matches the state.
+- [ ] With the toolbar hidden, force a connection error (stop the server or use a
+      wrong port): the window title shows `host:port — ошибка`.
+- [ ] Quit and relaunch: a new session keeps the last toolbar visibility choice.
 - [ ] Mouse buttons, wheel, side buttons and keyboard modifiers work.
 - [ ] Russian/English input, CapsLock, Emoji and multiline text work.
 - [ ] `⌘C`/`⌘V` inside the session act as `Ctrl+C`/`Ctrl+V`.
@@ -84,6 +104,19 @@ version and sanitized log; never include passwords or clipboard contents.
 - [ ] Delete an account used by a profile: the profile stays, keeps its user name
       and domain, and asks for a password.
 - [ ] A profile saved before this version still connects with its old password.
+
+### Quality presets
+
+- [ ] “Normal” keeps wallpaper/themes; “Slow internet” removes them after
+      reconnecting (quality is sent once in the Client Info PDU).
+- [ ] Choosing “Slow internet” while the resolution follows the window switches
+      it to 1280 × 720 without Retina and says so.
+- [ ] Custom: toggling 16-bit colour connects with a 16-bit desktop; toggling any
+      flag switches the preset to “Custom”.
+- [ ] Drag the window on a slow link with the slow preset: the remote desktop
+      follows with a delay but does not thrash between sizes.
+- [ ] Quality and resolution changes never alter the clipboard, the account
+      record or saved passwords.
 
 ### Clipboard
 

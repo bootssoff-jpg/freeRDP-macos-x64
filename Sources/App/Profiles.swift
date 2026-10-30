@@ -30,49 +30,7 @@ enum ConnectionSecurity: Int, Codable, CaseIterable {
     }
 }
 
-enum ResolutionMode: Int, Codable, CaseIterable {
-    case window = 0
-    case hd = 1
-    case fullHD = 2
-    case wqxga = 3
-
-    var title: String {
-        switch self {
-        case .window:
-            return L("Как в окне (Retina)")
-        case .hd:
-            return "1280 × 720"
-        case .fullHD:
-            return "1920 × 1080"
-        case .wqxga:
-            return "2560 × 1440"
-        }
-    }
-
-    /// Returns the remote desktop size in pixels for the current window.
-    func size(for contentSize: NSSize, backingScale: CGFloat) -> (width: Int, height: Int) {
-        let scale = max(1.0, backingScale)
-        switch self {
-        case .window:
-            let width = Int((contentSize.width * scale).rounded(.down))
-            let height = Int((contentSize.height * scale).rounded(.down))
-            return (clampDimension(width, min: 800, max: 2560),
-                    clampDimension(height, min: 600, max: 1600))
-        case .hd:
-            return (1280, 720)
-        case .fullHD:
-            return (1920, 1080)
-        case .wqxga:
-            return (2560, 1440)
-        }
-    }
-
-    private func clampDimension(_ value: Int, min lower: Int, max upper: Int) -> Int {
-        let even = value & ~1
-        return max(lower, min(even, upper))
-    }
-}
-
+// Remote desktop sizes and their limits live in ResolutionSettings.swift.
 struct Profile: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String = ""
@@ -88,7 +46,8 @@ struct Profile: Codable, Identifiable, Equatable {
     var clipboardEnabled: Bool = true
     var commandAsControl: Bool = true
     var autoResize: Bool = true
-    var resolution: ResolutionMode = .window
+    var resolution: ResolutionPolicy = .default
+    var quality: QualityPolicy = .default
     /// Optional keeps old profiles.json files (without this key) decodable.
     var legacyTLS: Bool? = nil
     var group: String? = nil
@@ -96,6 +55,67 @@ struct Profile: Codable, Identifiable, Equatable {
     var groupName: String {
         let value = group?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return value.isEmpty ? L("Без группы") : value
+    }
+
+    init() {}
+
+    init(id: UUID = UUID(), name: String = "", host: String = "", port: Int = 3389,
+         username: String = "", domain: String = "", credentialID: UUID? = nil,
+         security: ConnectionSecurity = .negotiate, savePassword: Bool = false,
+         clipboardEnabled: Bool = true, commandAsControl: Bool = true, autoResize: Bool = true,
+         resolution: ResolutionPolicy = .default, quality: QualityPolicy = .default,
+         legacyTLS: Bool? = nil, group: String? = nil) {
+        self.id = id
+        self.name = name
+        self.host = host
+        self.port = port
+        self.username = username
+        self.domain = domain
+        self.credentialID = credentialID
+        self.security = security
+        self.savePassword = savePassword
+        self.clipboardEnabled = clipboardEnabled
+        self.commandAsControl = commandAsControl
+        self.autoResize = autoResize
+        self.resolution = resolution
+        self.quality = quality
+        self.legacyTLS = legacyTLS
+        self.group = group
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, host, port, username, domain, credentialID, security, savePassword,
+             clipboardEnabled, commandAsControl, autoResize, resolution, quality, legacyTLS, group
+    }
+
+    /// Every key is optional on decode so profiles.json files written by older
+    /// versions (no `credentialID`, `resolution`, `quality` or `group`) still
+    /// load instead of being discarded.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        host = try container.decodeIfPresent(String.self, forKey: .host) ?? ""
+        port = try container.decodeIfPresent(Int.self, forKey: .port) ?? 3389
+        username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+        domain = try container.decodeIfPresent(String.self, forKey: .domain) ?? ""
+        credentialID = try container.decodeIfPresent(UUID.self, forKey: .credentialID)
+        security = try container.decodeIfPresent(ConnectionSecurity.self, forKey: .security)
+            ?? .negotiate
+        savePassword = try container.decodeIfPresent(Bool.self, forKey: .savePassword) ?? false
+        clipboardEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .clipboardEnabled) ?? true
+        commandAsControl =
+            try container.decodeIfPresent(Bool.self, forKey: .commandAsControl) ?? true
+        autoResize = try container.decodeIfPresent(Bool.self, forKey: .autoResize) ?? true
+        // A single legacy Int is still accepted for `resolution` by
+        // ResolutionPolicy's own decoder.
+        resolution = (try? container.decodeIfPresent(ResolutionPolicy.self, forKey: .resolution))
+            ?? .default
+        quality = (try? container.decodeIfPresent(QualityPolicy.self, forKey: .quality))
+            ?? .default
+        legacyTLS = try container.decodeIfPresent(Bool.self, forKey: .legacyTLS)
+        group = try container.decodeIfPresent(String.self, forKey: .group)
     }
 
     var displayName: String {

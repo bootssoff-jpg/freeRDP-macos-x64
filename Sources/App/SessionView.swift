@@ -23,6 +23,8 @@ final class SessionView: NSView {
     private let retryButton = UI.button(L("Переподключиться"), target: nil, action: nil)
     private let settingsButton = UI.button(L("Изменить параметры"), target: nil, action: nil)
     private var toolbarHeight: NSLayoutConstraint!
+    private var showsToolbar = true
+    private var fullScreenMode = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -193,8 +195,28 @@ final class SessionView: NSView {
     }
 
     func setFullScreen(_ fullScreen: Bool) {
-        toolbarHeight.constant = fullScreen ? 0 : 44
-        toolbar.isHidden = fullScreen
+        fullScreenMode = fullScreen
+        applyToolbarVisibility()
+    }
+
+    /// Windowed toolbar toggle. Hiding releases the full 44 pt row; the RDP view
+    /// takes the space, so the remote desktop grows instead of being clipped.
+    func setToolbarVisible(_ visible: Bool) {
+        showsToolbar = visible
+        applyToolbarVisibility()
+    }
+
+    var isToolbarVisible: Bool { showsToolbar && !fullScreenMode }
+
+    /// Height reserved by the toolbar right now (0 when hidden).
+    var desktopAreaHeight: CGFloat { isToolbarVisible ? SessionView.toolbarHeightValue : 0 }
+
+    static let toolbarHeightValue: CGFloat = 44
+
+    private func applyToolbarVisibility() {
+        let shown = isToolbarVisible
+        toolbarHeight.constant = shown ? SessionView.toolbarHeightValue : 0
+        toolbar.isHidden = !shown
     }
 
     // MARK: - Actions

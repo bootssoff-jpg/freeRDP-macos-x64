@@ -22,6 +22,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     private var currentHost = ""
     private var currentPort = 3389
     private var lastRemoteSize = (width: 0, height: 0)
+    /// Initial value for new windows; the toggle updates both this preference
+    /// and the active window.
+    static let toolbarPreferenceKey = "RDPMacShowSessionToolbar"
+    private var showsSessionToolbar: Bool = {
+        let stored = UserDefaults.standard.object(forKey: MainWindowController.toolbarPreferenceKey)
+        return (stored as? Bool) ?? true
+    }()
 
     static let sessionDidChange = Notification.Name("RDPMacSessionDidChange")
     var runningProfileID: UUID? { sessionActive ? lastRequest?.profileID : nil }
@@ -108,6 +115,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         sessionView.frame = window.contentView?.bounds ?? window.frame
         window.contentView = sessionView
         sessionView.configure(host: currentHost, port: currentPort)
+        // The per-window state wins over the stored preference for this window.
+        sessionView.setToolbarVisible(showsSessionToolbar)
         window.makeFirstResponder(sessionView.rdpView)
     }
 
@@ -151,12 +160,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
             }
         }
 
-        // The session view uses a 44 pt toolbar; match its desktop area exactly
-        // to avoid an unnecessary DisplayControl resize right after connecting.
+        // Match the session view's desktop area exactly (the toolbar can be
+        // hidden by the user preference) to avoid an unnecessary DisplayControl
+        // resize right after connecting.
         let content = NSSize(width: max(800, window.contentView?.bounds.width ?? 1000),
-                             height: max(600, (window.contentView?.bounds.height ?? 700) - 44))
+                             height: max(600, (window.contentView?.bounds.height ?? 700)
+                                 - sessionView.desktopAreaHeight))
         let scale = window.backingScaleFactor
-        let size = request.resolution.size(for: content, backingScale: scale)
+        let size = request.resolution.size(forWindow: content, backingScale: scale)
+
+        let options = RDPMacSessionOptions.defaultOptions(withWidth: UInt(size.width),
+                                                          height: UInt(size.height))
+        // Window mode expresses Retina through the framebuffer size; fixed
+        // presets ask Windows for 200 % DPI scaling instead.
+        if !request.resolution.allowsAutoResize {
+            options.desktopScaleFactor = UInt(request.resolution.desktopScaleFactor)
+        }
+        // Performance preferences travel once in the Client Info PDU.
+        request.quality.apply(to: options)
 
         client?.delegate = nil
         let newClient = RDPMacClient()
@@ -173,8 +194,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
                                 username: request.username,
                                 domain: request.domain,
                                 password: request.password,
-                                width: UInt(size.width),
-                                height: UInt(size.height),
+                                options: options,
                                 securityMode: request.security.bridgeValue,
                                 clipboardEnabled: request.clipboardEnabled,
                                 commandAsControl: request.commandAsControl,
@@ -437,7 +457,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         case .disconnected, .failed:
             sessionActive = false
             connected = false
-            window?.title = "RDP Mac"
+            window?.title = (state == .failed && !sessionView.isToolbarVisible)
+                ? "\(currentHost):\(currentPort) — " + L("ошибка")
+                : "RDP Mac"
             diagnosticsController?.setSessionActive(false)
             if pendingShowSettings {
                 pendingShowSettings = false
@@ -504,7 +526,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
         connected = false
         sessionActive = false
         let message = error ?? L("Сеанс завершён.")
-        window?.title = "RDP Mac"
+        window?.title = (error != nil && !sessionView.isToolbarVisible)
+            ? "\(currentHost):\(currentPort) — " + L("ошибка")
+            : "RDP Mac"
         diagnosticsController?.setSessionActive(false)
         diagnosticsController?.update(diagnostics: clipboardDiagnostics,
                                       session: sessionDescription())
@@ -583,6 +607,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
 
     @objc func toggleFullScreenAction(_ sender: Any?) {
         window?.toggleFullScreen(nil)
+    }
+
+    /// Shows or hides the session toolbar in this window only. The stored
+    /// preference is the initial state for new windows.
+    @objc func toggleSessionToolbar(_ sender: Any?) {
+        showsSessionToolbar.toggle()
+        UserDefaults.standard.set(showsSessionToolbar, forKey: Self.toolbarPreferenceKey)
+        sessionView.setToolbarVisible(showsSessionToolbar)
+        // The desktop area changed. Window-mode profiles follow it through
+        // DisplayControl (debounced); fixed sizes only relayout.
+        scheduleRemoteResize()
+        LogStore.shared.append(showsSessionToolbar ? L("Панель сеанса показана")
+                                                   : L("Панель сеанса скрыта"), level: 0)
     }
 
     @objc func clipboardSendLocal(_ sender: Any?) {
@@ -710,7 +747,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(disconnect(_:)), #selector(sendCtrlAltDelete(_:)),
-             #selector(toggleFullScreenAction(_:)):
+             #selector(toggleFullScreenAction(_:)), #selector(toggleSessionToolbar(_:)):
+            if menuItem.action == #selector(toggleSessionToolbar(_:)) {
+                menuItem.state = showsSessionToolbar ? .on : .off
+            }
             return sessionActive
         case #selector(clipboardSendLocal(_:)), #selector(clipboardRequestRemote(_:)),
              #selector(clipboardResync(_:)):
@@ -724,7 +764,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
 
     private func scheduleRemoteResize() {
         resizeTimer?.invalidate()
-        resizeTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) {
+        let throttle = lastRequest?.quality.effectiveResizeThrottle ?? 0.45
+        resizeTimer = Timer.scheduledTimer(withTimeInterval: throttle, repeats: false) {
             [weak self] _ in
             self?.applyRemoteResize()
         }
@@ -735,14 +776,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate,
 
     private func applyRemoteResize() {
         guard let client, connected, let window, let request = lastRequest,
-              request.autoResize, request.resolution == .window else { return }
+              request.autoResize, request.resolution.allowsAutoResize else { return }
         let size = sessionView.rdpView.bounds.size
         guard size.width > 100, size.height > 100 else { return }
-        let scale = window.backingScaleFactor
-        var width = Int(size.width * scale) & ~1
-        var height = Int(size.height * scale) & ~1
-        width = max(800, min(width, 2560))
-        height = max(600, min(height, 1600))
+        // Use the same policy as at connect time so Retina and the memory limit
+        // are applied identically, and never send a scale factor here.
+        let target = request.resolution.size(forWindow: size,
+                                             backingScale: window.backingScaleFactor)
+        let width = target.width
+        let height = target.height
         if abs(width - lastRemoteSize.width) < 8 && abs(height - lastRemoteSize.height) < 8 {
             return
         }

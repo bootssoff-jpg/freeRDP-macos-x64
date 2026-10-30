@@ -10,7 +10,8 @@ struct ConnectionRequest {
     let clipboardEnabled: Bool
     let commandAsControl: Bool
     let autoResize: Bool
-    let resolution: ResolutionMode
+    let resolution: ResolutionPolicy
+    let quality: QualityPolicy
     let savePassword: Bool
     let profileID: UUID?
     let credentialID: UUID?
@@ -27,6 +28,7 @@ struct ConnectionRequest {
                           commandAsControl: commandAsControl,
                           autoResize: autoResize,
                           resolution: resolution,
+                          quality: quality,
                           savePassword: savePassword,
                           profileID: profileID,
                           credentialID: credentialID,
@@ -66,6 +68,30 @@ final class ConnectFormView: NSView {
     private let forgetPasswordButton = UI.button(L("Забыть пароль"), target: nil, action: nil)
     private let securityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let resolutionPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let customWidthField = UI.textField(placeholder: "1600", width: 70)
+    private let customHeightField = UI.textField(placeholder: "900", width: 70)
+    private let retinaCheckbox =
+        UI.checkbox(L("Retina"), target: nil, action: nil, state: true)
+    private let resolutionHint = UI.label("", size: 11, color: .secondaryLabelColor, lines: 2)
+    private let qualityPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let qualitySummary = UI.label("", size: 11, color: .secondaryLabelColor, lines: 2)
+    private let customQualityView = NSStackView()
+    private let wallpaperCheckbox =
+        UI.checkbox(L("Отключить обои"), target: nil, action: nil)
+    private let themesCheckbox =
+        UI.checkbox(L("Отключить темы"), target: nil, action: nil)
+    private let animationsCheckbox =
+        UI.checkbox(L("Отключить анимации"), target: nil, action: nil, state: true)
+    private let windowDragCheckbox =
+        UI.checkbox(L("Не показывать содержимое при перетаскивании"), target: nil, action: nil,
+                    state: true)
+    private let compositionCheckbox =
+        UI.checkbox(L("Разрешить композицию рабочего стола"), target: nil, action: nil)
+    private let fontSmoothingCheckbox =
+        UI.checkbox(L("Сглаживание шрифтов"), target: nil, action: nil, state: true)
+    private let colorDepth16Checkbox =
+        UI.checkbox(L("16 бит (меньше цветов, меньше трафика)"), target: nil, action: nil)
+    private let compressionPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let clipboardCheckbox =
         UI.checkbox(L("Двусторонний текстовый буфер обмена"), target: nil, action: nil, state: true)
     private let commandAsControlCheckbox =
@@ -137,8 +163,28 @@ final class ConnectFormView: NSView {
 
         securityPopup.addItems(withTitles: ConnectionSecurity.allCases.map { $0.title })
         securityPopup.selectItem(at: 0)
-        resolutionPopup.addItems(withTitles: ResolutionMode.allCases.map { $0.title })
+        resolutionPopup.addItems(withTitles: ResolutionPolicy.Preset.allCases.map {
+            ResolutionPolicy(preset: $0).title
+        })
         resolutionPopup.selectItem(at: 0)
+        resolutionPopup.target = self
+        resolutionPopup.action = #selector(resolutionChanged(_:))
+        retinaCheckbox.target = self
+        retinaCheckbox.action = #selector(retinaToggled(_:))
+        customWidthField.setAccessibilityLabel(L("Ширина"))
+        customHeightField.setAccessibilityLabel(L("Высота"))
+        qualityPopup.addItems(withTitles: QualityPolicy.Preset.allCases.map { $0.title })
+        qualityPopup.selectItem(at: 0)
+        qualityPopup.target = self
+        qualityPopup.action = #selector(qualityChanged(_:))
+        compressionPopup.addItems(withTitles: [L("64K"), "RDP6", "RDP6.1"])
+        compressionPopup.selectItem(at: 2)
+        for control in [wallpaperCheckbox, themesCheckbox, animationsCheckbox,
+                        windowDragCheckbox, compositionCheckbox, fontSmoothingCheckbox,
+                        colorDepth16Checkbox] {
+            control.target = self
+            control.action = #selector(qualityDetailChanged(_:))
+        }
 
         progress.style = .spinning
         progress.controlSize = .small
@@ -150,10 +196,29 @@ final class ConnectFormView: NSView {
         let userRow = UI.hStack([usernameField, UI.label(L("Домен")), domainField])
         let passwordRow = UI.hStack([passwordField, savePasswordCheckbox, forgetPasswordButton])
         let securityRow = UI.hStack([securityPopup])
-        let resolutionRow = UI.hStack([resolutionPopup])
+        let customSizeRow = UI.hStack([customWidthField, UI.label("×"), customHeightField,
+                                       UI.label(L("пикселей"))], spacing: 6)
+        let resolutionRow = UI.hStack([resolutionPopup, retinaCheckbox, customSizeRow], spacing: 10)
+        retinaCheckbox.toolTip =
+            L("В режиме «Как в окне» учитывает плотность Retina дисплея. Для фиксированных размеров запрашивает в Windows масштаб 200 %; сервер может его проигнорировать.")
         legacyTLSCheckbox.toolTip =
             L("Разрешает TLS SECLEVEL=0 для серверов со старыми сертификатами ")
             + L("(например, SHA-1/RSA-1024). Сертификат всё равно нужно подтвердить вручную.")
+        customQualityView.orientation = .vertical
+        customQualityView.alignment = .leading
+        customQualityView.spacing = 4
+        customQualityView.addArrangedSubview(UI.hStack([wallpaperCheckbox, themesCheckbox], spacing: 14))
+        customQualityView.addArrangedSubview(UI.hStack([animationsCheckbox, windowDragCheckbox],
+                                                       spacing: 14))
+        customQualityView.addArrangedSubview(UI.hStack([compositionCheckbox, fontSmoothingCheckbox],
+                                                       spacing: 14))
+        customQualityView.addArrangedSubview(UI.hStack([colorDepth16Checkbox,
+                                                        UI.label(L("Сжатие")), compressionPopup],
+                                                       spacing: 10))
+        customQualityView.isHidden = true
+        qualitySummary.toolTip =
+            L("Параметры передаются серверу при подключении и применяются к новому сеансу. Windows вправе игнорировать часть флагов; экономия трафика измеряется отдельно.")
+        let qualityRow = UI.hStack([qualityPopup])
         let options = UI.vStack([clipboardCheckbox, commandAsControlCheckbox, autoResizeCheckbox,
                                  legacyTLSCheckbox], spacing: 5)
         let actionRow = UI.hStack([connectButton, progress], spacing: 12)
@@ -171,6 +236,10 @@ final class ConnectFormView: NSView {
         let advanced = NSGridView(views: [
             [UI.label(L("Безопасность"), weight: .medium), securityRow],
             [UI.label(L("Разрешение"), weight: .medium), resolutionRow],
+            [NSGridCell.emptyContentView, resolutionHint],
+            [UI.label(L("Качество"), weight: .medium), qualityRow],
+            [NSGridCell.emptyContentView, qualitySummary],
+            [NSGridCell.emptyContentView, customQualityView],
             [NSGridCell.emptyContentView, options]
         ])
         for section in [grid, advanced] {
@@ -210,6 +279,8 @@ final class ConnectFormView: NSView {
             stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -20),
             grid.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor)
         ])
+        updateResolutionUI()
+        updateQualityUI()
     }
 
     @objc private func toggleAdvanced(_ sender: NSButton) {
@@ -274,7 +345,8 @@ final class ConnectFormView: NSView {
         advancedView?.isHidden = !hasAdvancedSettings
         advancedToggle?.state = hasAdvancedSettings ? .on : .off
         securityPopup.selectItem(at: profile.security.rawValue)
-        resolutionPopup.selectItem(at: profile.resolution.rawValue)
+        applyResolution(profile.resolution)
+        applyQuality(profile.quality)
         clipboardCheckbox.state = profile.clipboardEnabled ? .on : .off
         commandAsControlCheckbox.state = profile.commandAsControl ? .on : .off
         autoResizeCheckbox.state = profile.autoResize ? .on : .off
@@ -327,6 +399,7 @@ final class ConnectFormView: NSView {
                 commandAsControl: commandAsControlCheckbox.state == .on,
                 autoResize: autoResizeCheckbox.state == .on,
                 resolution: selectedResolution,
+                quality: selectedQuality,
                 legacyTLS: legacyTLSCheckbox.state == .on,
                 group: groupField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
     }
@@ -386,6 +459,16 @@ final class ConnectFormView: NSView {
         passwordField.isEnabled = !busy
         securityPopup.isEnabled = !busy
         resolutionPopup.isEnabled = !busy
+        retinaCheckbox.isEnabled = !busy
+        customWidthField.isEnabled = !busy
+        customHeightField.isEnabled = !busy
+        qualityPopup.isEnabled = !busy
+        compressionPopup.isEnabled = !busy
+        for control in [wallpaperCheckbox, themesCheckbox, animationsCheckbox,
+                        windowDragCheckbox, compositionCheckbox, fontSmoothingCheckbox,
+                        colorDepth16Checkbox] {
+            control.isEnabled = !busy
+        }
         if busy {
             progress.startAnimation(nil)
             connectButton.title = L("Подключение…")
@@ -400,8 +483,99 @@ final class ConnectFormView: NSView {
         ConnectionSecurity(rawValue: securityPopup.indexOfSelectedItem) ?? .negotiate
     }
 
-    private var selectedResolution: ResolutionMode {
-        ResolutionMode(rawValue: resolutionPopup.indexOfSelectedItem) ?? .window
+    private var selectedResolution: ResolutionPolicy {
+        let index = resolutionPopup.indexOfSelectedItem
+        let preset = ResolutionPolicy.Preset(rawValue: index) ?? .window
+        return ResolutionPolicy(preset: preset,
+                                customWidth: Int(customWidthField.stringValue) ?? 1600,
+                                customHeight: Int(customHeightField.stringValue) ?? 900,
+                                retina: retinaCheckbox.state == .on)
+    }
+
+    /// Shows the custom size fields only where they apply and explains what the
+    /// Retina toggle does for the selected mode.
+    private func updateResolutionUI() {
+        let policy = selectedResolution
+        customWidthField.isHidden = !policy.isCustom
+        customHeightField.isHidden = !policy.isCustom
+        resolutionHint.stringValue = policy.customSizeWarning
+            ?? (policy.allowsAutoResize
+                ? L("Размер следует за окном; Retina учитывает плотность дисплея.")
+                : L("Фиксированный размер: окно только масштабирует изображение. Retina запрашивает масштаб Windows 200 % (сервер может проигнорировать)."))
+        resolutionHint.textColor = policy.customSizeWarning == nil
+            ? .secondaryLabelColor : .systemOrange
+    }
+
+    @objc private func resolutionChanged(_ sender: NSPopUpButton) {
+        updateResolutionUI()
+    }
+
+    @objc private func retinaToggled(_ sender: NSButton) {
+        updateResolutionUI()
+    }
+
+    /// Quality presets are applied on the next connection; the summary explains
+    /// what the server will be asked for.
+    private var selectedQuality: QualityPolicy {
+        var policy = QualityPolicy()
+        policy.preset = QualityPolicy.Preset(rawValue: qualityPopup.indexOfSelectedItem) ?? .normal
+        policy.disableWallpaper = wallpaperCheckbox.state == .on
+        policy.disableThemes = themesCheckbox.state == .on
+        policy.disableAnimations = animationsCheckbox.state == .on
+        policy.disableFullWindowDrag = windowDragCheckbox.state == .on
+        policy.allowDesktopComposition = compositionCheckbox.state == .on
+        policy.allowFontSmoothing = fontSmoothingCheckbox.state == .on
+        policy.colorDepth = colorDepth16Checkbox.state == .on ? 16 : 32
+        policy.compressionLevel = compressionPopup.indexOfSelectedItem + 1
+        return policy
+    }
+
+    private func updateQualityUI() {
+        let policy = selectedQuality
+        customQualityView.isHidden = policy.preset != .custom
+        qualitySummary.stringValue = policy.summary
+    }
+
+    @objc private func qualityChanged(_ sender: NSPopUpButton) {
+        let preset = QualityPolicy.Preset(rawValue: sender.indexOfSelectedItem) ?? .normal
+        if preset == .slow, selectedResolution.allowsAutoResize {
+            // The slow preset starts from a small, non-Retina desktop. The
+            // resolution popup changes visibly, so nothing happens silently.
+            applyResolution(QualityPolicy.slowStartResolution)
+            showMessage(L("Для медленного соединения выбран размер 1280 × 720 без Retina."),
+                        isError: false)
+        }
+        updateQualityUI()
+    }
+
+    @objc private func qualityDetailChanged(_ sender: NSButton) {
+        // Touching an individual flag makes the profile "custom" instead of
+        // pretending a preset still applies.
+        if qualityPopup.indexOfSelectedItem != QualityPolicy.Preset.custom.rawValue {
+            qualityPopup.selectItem(at: QualityPolicy.Preset.custom.rawValue)
+        }
+        updateQualityUI()
+    }
+
+    private func applyResolution(_ policy: ResolutionPolicy) {
+        resolutionPopup.selectItem(at: policy.preset.rawValue)
+        customWidthField.stringValue = String(policy.customWidth)
+        customHeightField.stringValue = String(policy.customHeight)
+        retinaCheckbox.state = policy.retina ? .on : .off
+        updateResolutionUI()
+    }
+
+    private func applyQuality(_ policy: QualityPolicy) {
+        qualityPopup.selectItem(at: policy.preset.rawValue)
+        wallpaperCheckbox.state = policy.disableWallpaper ? .on : .off
+        themesCheckbox.state = policy.disableThemes ? .on : .off
+        animationsCheckbox.state = policy.disableAnimations ? .on : .off
+        windowDragCheckbox.state = policy.disableFullWindowDrag ? .on : .off
+        compositionCheckbox.state = policy.allowDesktopComposition ? .on : .off
+        fontSmoothingCheckbox.state = policy.allowFontSmoothing ? .on : .off
+        colorDepth16Checkbox.state = policy.colorDepth == 16 ? .on : .off
+        compressionPopup.selectItem(at: max(0, min(2, policy.compressionLevel - 1)))
+        updateQualityUI()
     }
 
     // MARK: - Actions
@@ -528,6 +702,14 @@ final class ConnectFormView: NSView {
             showMessage(L("Порт должен быть числом от 1 до 65535."), isError: true)
             return
         }
+        let resolution = selectedResolution
+        if let warning = resolution.customSizeWarning {
+            showMessage(warning, isError: true)
+            advancedView?.isHidden = false
+            advancedToggle?.state = .on
+            window?.makeFirstResponder(customWidthField)
+            return
+        }
         let username = usernameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !username.isEmpty else {
             showMessage(L("Укажите имя пользователя."), isError: true)
@@ -545,7 +727,8 @@ final class ConnectFormView: NSView {
                                         clipboardEnabled: clipboardCheckbox.state == .on,
                                         commandAsControl: commandAsControlCheckbox.state == .on,
                                         autoResize: autoResizeCheckbox.state == .on,
-                                        resolution: selectedResolution,
+                                        resolution: resolution,
+                                        quality: selectedQuality,
                                         savePassword: savePasswordCheckbox.state == .on,
                                         profileID: selectedProfileID,
                                         credentialID: selectedCredentialID,

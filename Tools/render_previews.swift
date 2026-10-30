@@ -49,6 +49,9 @@ manager.reload()
 try render(manager.window!, name: "connections")
 let form = ConnectFormView()
 form.setProfiles([work,server,home], selectedID: work.id)
+// The account directory is empty in the demo; show the manual-credentials item
+// instead of an unpopulated popup.
+form.setCredentials([], selectedID: nil)
 form.applyProfile(work, password: nil)
 let formWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 620),
                           styleMask: [.titled], backing: .buffered, defer: false)

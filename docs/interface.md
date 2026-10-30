@@ -38,6 +38,33 @@ account in the form always clears the password field, so a previous user's
 password is never reused. Directory edits never touch a running session: each
 session received its own copy of the credentials when it started.
 
+A **resolution preset** belongs to the profile: follow the window, 1024×768,
+1280×720, 1600×900, 1920×1080, 2560×1440 or a custom size in pixels. Custom
+sizes must stay within 640×480 … 4096×2560 and are rounded down to even values;
+the form explains a rejected size and does not start the connection. Profiles
+saved by 1.0.x with a fixed size keep it after the upgrade. Only the window
+preset follows window changes; a fixed preset just scales the image.
+
+The **Retina** switch means two different things, which the form states
+explicitly: in window mode the remote size uses the display's backing scale, and
+for fixed presets it asks Windows for 200 % DPI scaling (a server may ignore it,
+which is visible immediately and not reported as success).
+
+**Quality** is a per-profile preset: Normal, Slow internet or Custom. Custom
+exposes wallpaper, themes, animations, window-drag contents, desktop
+composition, font smoothing, 16-bit colour and RDP6 compression levels; changing
+any flag switches the preset to Custom instead of pretending a preset still
+applies. The values travel in the Client Info PDU, so they take effect on the
+next connection. The slow preset also starts from 1280 × 720 without Retina
+(the resolution popup changes visibly) and sends fewer DisplayControl resizes.
+
+The **session toolbar** can be hidden with View → Show session toolbar (⌘⇧T) or
+by the toolbar toggle. The remote desktop takes the whole window; in window mode
+it follows the new size through DisplayControl, while fixed presets only
+relayout. When the toolbar is hidden and a session fails, the window title shows
+`host:port — ошибка` because the inline status line is gone. The choice is
+remembered for new windows; full screen always hides the toolbar.
+
 A clipboard response timeout offers explicit reconnection. The previous request
 is retained until its response arrives because CLIPRDR responses have no request
 ID. Do not clear it merely to make the UI appear recovered.
@@ -58,6 +85,34 @@ Objective-C используют один механизм выбора. По у
 
 После тайм-аута канал восстанавливается через явное переподключение. Нельзя
 сбрасывать ожидание ответа без учёта запоздалых ответов CLIPRDR.
+
+**Разрешение** хранится в профиле: как в окне, 1024×768, 1280×720, 1600×900,
+1920×1080, 2560×1440 или свой размер в пикселях. Свой размер должен быть в
+пределах 640×480 … 4096×2560 и округляется вниз до чётного; форма объясняет
+отказ и не начинает подключение. Профили 1.0.x с фиксированным размером
+сохраняют его после обновления. За окном следует только режим «Как в окне»,
+фиксированный размер просто масштабирует изображение.
+
+Переключатель **Retina** означает разное, и форма говорит об этом прямо: в
+режиме «Как в окне» размер считается по плотности дисплея, а для фиксированных
+размеров в Windows запрашивается масштаб 200 % (сервер может его
+проигнорировать — это видно сразу и не выдаётся за успех).
+
+**Качество** — пресет профиля: «Обычное», «Медленный интернет» или
+«Пользовательское». В пользовательском доступны обои, темы, анимации,
+содержимое при перетаскивании, композиция рабочего стола, сглаживание шрифтов,
+16 бит и уровни сжатия RDP6; изменение любого флага переводит пресет в
+«Пользовательское», а не делает вид, что пресет ещё действует. Значения
+передаются в Client Info PDU и применяются к следующему подключению.
+«Медленный интернет» дополнительно начинает с 1280 × 720 без Retina (это видно
+в списке разрешений) и реже отправляет запросы изменения размера.
+
+**Панель сеанса** скрывается через «Вид → Показывать панель сеанса» (⌘⇧T) или
+кнопку на панели. Рабочий стол занимает всё окно; в режиме «Как в окне» он
+следует за новым размером через DisplayControl, фиксированные размеры только
+пересчитывают раскладку. Если панель скрыта и сеанс завершился ошибкой, заголовок
+окна показывает `host:port — ошибка`, потому что строки состояния нет. Выбор
+запоминается для новых окон; полноэкранный режим всегда скрывает панель.
 
 ## Preview images
 

@@ -20,6 +20,19 @@ actually uploaded.
 - Migration of existing host-keyed passwords happens lazily and idempotently:
   the secret already read for the form is copied into a new account item, the
   profile is linked only after a verified write, and old Keychain items are kept.
+- Resolution presets per profile: follow the window, 1024×768, 1280×720,
+  1600×900, 1920×1080, 2560×1440 or a custom size. Custom sizes are validated
+  (640×480 … 4096×2560, even pixels) and explained in the form before a
+  connection starts. Profiles written by 1.0.x keep their fixed size.
+- A Retina switch: window mode follows the display density, fixed presets ask
+  Windows for 200 % DPI scaling (servers may ignore it).
+- Quality presets per profile (Normal / Slow internet / Custom), sent in the
+  Client Info PDU: wallpaper, themes, animations, window-drag contents, desktop
+  composition, font smoothing, 16-bit colour and RDP6 compression. The slow
+  preset also debounces DisplayControl resizes on long links.
+- The session toolbar can be hidden (View → Show session toolbar, ⌘⇧T). The
+  remote desktop takes the freed space and, in window mode, follows it; the
+  preference is remembered for new windows.
 
 ### Fixed
 

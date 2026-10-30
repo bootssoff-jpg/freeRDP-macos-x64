@@ -4,7 +4,7 @@ All notable changes are documented here. This project follows semantic
 versioning for public builds. A version is not published until an artifact is
 actually uploaded.
 
-## Unreleased
+## 1.0.4
 
 ### Added
 

@@ -4,6 +4,7 @@
 
 <h1 align="center">RDP Mac</h1>
 <p align="center">Независимые удалённые рабочие столы. Буфер обмена активной сессии.</p>
+<p align="center">Клиент RDP для Windows на Mac · Intel x86_64 · FreeRDP 3.32.2</p>
 
 <p align="center">
   <a href="https://github.com/bootssoff-jpg/freeRDP-macos-x64/actions/workflows/build.yml"><img src="https://github.com/bootssoff-jpg/freeRDP-macos-x64/actions/workflows/build.yml/badge.svg?branch=main" alt="Сборка и тесты"></a>
@@ -19,6 +20,28 @@
 интерфейс Swift/AppKit, отдельные окна сессий и обмен текстом через буфер.
 Интерфейс доступен **на английском и русском**.
 
+## Удалённый рабочий стол Windows на Mac
+
+RDP Mac — это **клиент RDP для Windows на macOS**: Intel Mac (x86_64, macOS 12+)
+подключается к Windows-ПК или Windows Server по протоколу Remote Desktop с
+NLA/CredSSP и TLS.
+
+**Ищете замену клиенту Microsoft** — «Подключение к удалённому рабочему столу»
+(`mstsc`), приложению Microsoft Remote Desktop или его преемнику «Windows App»?
+RDP Mac закрывает повседневный сценарий: несколько сохранённых Windows-компьютеров,
+независимые окна сессий и надёжный **двусторонний текстовый буфер** между macOS и
+Windows. Это нативное приложение AppKit, а не обёртка на Electron или WebView.
+
+- Один DMG ~6 МБ. Без Electron, без Homebrew, без фоновых служб и телеметрии.
+- FreeRDP и OpenSSL слинкованы статически: устанавливать среду выполнения не нужно.
+- Менеджер профилей с группами, общий справочник учётных записей и дублирование
+  подключения — вместо одного окна, затирающего предыдущую сессию.
+- Честные границы: буфер только текстовый — нет обмена файлами и изображениями,
+  звука, нескольких мониторов, RemoteApp и RD Gateway (см. [Ограничения](#ограничения)).
+
+*Также ищут как:* клиент RDP для Mac, «Подключение к удалённому рабочему столу»
+для Mac, mstsc для macOS, замена Windows App, GUI для FreeRDP на macOS.
+
 ![Менеджер подключений с демонстрационными группами](docs/images/connections.ru.png)
 
 *Настоящие представления AppKit отрисованы вне экрана с демонстрационными
@@ -26,17 +49,17 @@
 
 ## Скачать приложение
 
-Готовые сборки публикуются в [Releases](https://github.com/bootssoff-jpg/freeRDP-macos-x64/releases).
-Если выпусков ещё нет, предварительная сборка подготовлена локально, но не
-опубликована. Также доступна [сборка из исходников](docs/building.md).
+Готовые сборки публикуются в [Releases](https://github.com/bootssoff-jpg/freeRDP-macos-x64/releases);
+текущая сборка — 1.0.4. Каждый выпуск содержит ZIP или DMG и файл `SHA256SUMS`.
+Также доступна [сборка из исходников](docs/building.md).
 
-| | Предварительная сборка |
+| | Сборка 1.0.4 |
 |---|---|
 | Система | macOS 12 и новее, Intel x86_64 |
 | Форматы | ZIP или DMG и файл `SHA256SUMS` |
 | Зависимости | Включены; Homebrew для запуска не нужен |
 | Подпись | Ad-hoc; **без Developer ID и нотаризации** |
-| Проверка Windows | Новые многосессионные изменения ещё требуют проверки на сервере |
+| Проверка Windows | Автотесты проходят; живой чек-лист по новым пунктам разрешения, качества и панели ещё не пройден |
 
 Deployment target — 12.0; последняя локальная среда — macOS 15.8.1 Intel.
 Проверка запуска на macOS 12 не заменяется проверкой deployment target.
@@ -115,6 +138,7 @@ make test    # тесты протокола, жизненного цикла и
 make dist    # ZIP + DMG + SHA256SUMS
 ```
 
+- [FAQ: что такое RDP Mac и чего в нём нет](docs/faq.ru.md)
 - [Сборка](docs/building.md) · [Архитектура](docs/architecture.md)
 - [Языки и интерфейс](docs/interface.md) · [Проверки](docs/testing.md)
 - [Диагностика проблем](docs/troubleshooting.md) · [Упаковка релиза](docs/releasing.md)

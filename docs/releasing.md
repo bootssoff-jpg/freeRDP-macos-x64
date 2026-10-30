@@ -9,6 +9,53 @@ ZIP, DMG, `CHANGELOG.md` and release notes on the same version. The build
 number in `CFBundleVersion` is independent; do not invent a second public
 version.
 
+## Repository metadata (GitHub)
+
+The GitHub “About” box, topics and homepage decide how people find the project,
+so keep them in sync with the READMEs and the FAQ.
+
+Description (at most 350 characters; English first, one Russian sentence):
+
+> Windows RDP client for Mac (Intel x86_64, macOS 12+): native Swift/AppKit app
+> on FreeRDP 3.32.2, NLA/CredSSP, independent session windows, reliable text
+> clipboard. Lightweight alternative to Microsoft Remote Desktop / Windows App.
+> Клиент RDP для Windows на Mac.
+
+Homepage: the Releases page.
+
+Topics (19 of the 20 GitHub allows):
+
+```text
+appkit clipboard credssp freerdp intel-mac macos macos-app mstsc
+microsoft-remote-desktop-alternative nla rdp rdp-client rdp-mac remote-desktop
+remote-desktop-client swift swift-app windows-remote-desktop x86-64
+```
+
+Apply them explicitly — packaging never changes repository settings:
+
+```bash
+gh repo edit OWNER/REPO \
+    --description "…" --homepage "…/releases" \
+    --add-topic rdp-client --add-topic windows-remote-desktop \
+    --add-topic remote-desktop-client --add-topic mstsc \
+    --add-topic microsoft-remote-desktop-alternative --add-topic rdp-mac \
+    --add-topic intel-mac --add-topic x86-64 --add-topic nla \
+    --add-topic credssp --add-topic macos-app --add-topic swift-app
+```
+
+Rules:
+
+- Do **not** rename the repository: release links, badges and the DMG install
+  instructions would break. Search results depend on the description, topics and
+  README text, not on the slug.
+- No superlatives the code cannot support (“fastest”, “100 % replacement”).
+  Describe measurable facts: static FreeRDP/OpenSSL, one ~6 MB DMG, no Electron,
+  no helper daemons, no telemetry.
+- `README.md`, `README.ru.md`, `docs/faq.md` and `docs/faq.ru.md` must agree with
+  the description. When limits change (file clipboard, audio, monitors), update
+  all four and the “Is it a replacement” answers.
+- Social preview: `docs/images/connections.png` (under GitHub's 1 MB limit).
+
 ## Build and package
 
 ```bash

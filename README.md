@@ -4,6 +4,7 @@
 
 <h1 align="center">RDP Mac</h1>
 <p align="center">Independent remote desktops. A clipboard that follows your active session.</p>
+<p align="center">Windows Remote Desktop client for Mac · Intel x86_64 · FreeRDP 3.32.2</p>
 
 <p align="center">
   <a href="https://github.com/bootssoff-jpg/freeRDP-macos-x64/actions/workflows/build.yml"><img src="https://github.com/bootssoff-jpg/freeRDP-macos-x64/actions/workflows/build.yml/badge.svg?branch=main" alt="Build and tests"></a>
@@ -19,6 +20,29 @@ A native Intel macOS RDP client built on **FreeRDP 3.32.2**, with its own
 Swift/AppKit interface, independent session windows and text clipboard sharing.
 The interface is available in **English and Russian**.
 
+## Windows Remote Desktop on a Mac
+
+RDP Mac is a **Windows RDP client for macOS**: an Intel Mac (x86_64, macOS 12+)
+connects to a Windows PC or a Windows Server over the Remote Desktop Protocol,
+with NLA/CredSSP and TLS.
+
+**Replacing Microsoft's Remote Desktop client** — “Remote Desktop Connection”
+(`mstsc`), the Microsoft Remote Desktop app, or its successor “Windows App”? RDP
+Mac covers the everyday case: several saved Windows computers, independent
+session windows, and a reliable **two-way text clipboard** between macOS and
+Windows. It is a native AppKit application, not an Electron or WebView wrapper.
+
+- One ~6 MB DMG. No Electron, no Homebrew, no helper daemons, no telemetry.
+- FreeRDP and OpenSSL are linked statically, so there is no external runtime to
+  install.
+- A profile manager with groups, a shared account directory and duplicate
+  connection, instead of one session replacing the previous one.
+- Honest scope: text clipboard only — no file or image clipboard, audio,
+  multi-monitor, RemoteApp or RD Gateway yet (see [Current limits](#current-limits)).
+
+*Also known as:* RDP client for Mac, Remote Desktop Connection for Mac, `mstsc`
+for macOS, Windows App alternative, FreeRDP GUI for macOS.
+
 ![Connection manager with grouped demonstration profiles](docs/images/connections.png)
 
 *Actual AppKit views rendered offscreen with reserved `.invalid` demo hosts.
@@ -26,17 +50,17 @@ These are interface previews, not connected Windows sessions.*
 
 ## Get the app
 
-Published binaries belong on the [Releases page](https://github.com/bootssoff-jpg/freeRDP-macos-x64/releases).
-If no release is listed yet, the preview has been prepared locally but has not
-been published. You can also [build from source](docs/building.md).
+Published binaries belong on the [Releases page](https://github.com/bootssoff-jpg/freeRDP-macos-x64/releases);
+1.0.4 is the current build. Every release ships a ZIP or DMG plus
+`SHA256SUMS`. You can also [build from source](docs/building.md).
 
-| | Preview build |
+| | 1.0.4 build |
 |---|---|
 | System | macOS 12 or newer, Intel x86_64 |
 | Download formats | ZIP or DMG, plus `SHA256SUMS` |
 | Runtime dependencies | Included; no Homebrew installation needed |
 | Signature | Ad-hoc; **not Developer ID signed or notarized** |
-| Windows verification | New multi-session changes still require live-server testing |
+| Windows verification | Automated tests pass; the live Windows checklist for the new display, quality and toolbar items is still pending |
 
 The deployment target is 12.0; the latest local environment is macOS 15.8.1
 Intel. A macOS 12 runtime check is separate from deployment-target validation.
@@ -114,6 +138,7 @@ make test    # protocol, lifecycle and EN/RU interface tests
 make dist    # ZIP + DMG + SHA256SUMS
 ```
 
+- [FAQ: what RDP Mac is and is not](docs/faq.md)
 - [Build from source](docs/building.md) · [Architecture](docs/architecture.md)
 - [Languages and interface](docs/interface.md) · [Testing](docs/testing.md)
 - [Troubleshooting](docs/troubleshooting.md) · [Release packaging](docs/releasing.md)

@@ -4,6 +4,21 @@ All notable changes are documented here. This project follows semantic
 versioning for public builds. A version is not published until an artifact is
 actually uploaded.
 
+## Unreleased
+
+### Documentation
+
+- README (EN/RU) now states the actual use case in the first screen: a **Windows
+  RDP client with a macOS UI** (Intel x86_64) and a lightweight alternative to
+  Microsoft Remote Desktop / Remote Desktop Connection (`mstsc`) / Windows App,
+  with the measurable reasons and the honest limits listed next to it.
+- New `docs/faq.md` / `docs/faq.ru.md` answer the questions search traffic asks:
+  which Windows versions accept RDP (Home does not), what is missing compared to
+  Microsoft's client, Apple Silicon status, clipboard and password handling,
+  licensing and download verification.
+- `docs/releasing.md` records the GitHub description, topics, homepage and social
+  preview so the “About” box cannot drift away from the READMEs.
+
 ## 1.0.4
 
 ### Added

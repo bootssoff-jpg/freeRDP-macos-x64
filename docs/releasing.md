@@ -54,7 +54,8 @@ Rules:
 - `README.md`, `README.ru.md`, `docs/faq.md` and `docs/faq.ru.md` must agree with
   the description. When limits change (file clipboard, audio, monitors), update
   all four and the “Is it a replacement” answers.
-- Social preview: `docs/images/connections.png` (under GitHub's 1 MB limit).
+- Social preview: set it in **Settings → Social preview** (image ≤ 1 MB), for
+  example `docs/images/connections.png`; GitHub has no API for this field.
 
 ## Build and package
 
